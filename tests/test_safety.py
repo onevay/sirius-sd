@@ -70,6 +70,7 @@ def test_real_torch_save_checkpoint_ok(tmp_path):
 
 
 def test_getattr_forward_on_ultralytics_class_allowed(tmp_path, fake_detect):
+    pytest.importorskip("ultralytics")
     """Так официальный YOLO11 сохраняет forward головы: getattr(Detect, 'forward')."""
     Detect = fake_detect
 
@@ -84,6 +85,7 @@ def test_getattr_forward_on_ultralytics_class_allowed(tmp_path, fake_detect):
 
 
 def test_getattr_dunder_chain_is_flagged(tmp_path, fake_detect):
+    pytest.importorskip("ultralytics")
     Detect = fake_detect
 
     class G:

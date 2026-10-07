@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sd.bench import replay_tracking, track_metrics
+pytest.importorskip("ultralytics", reason="трекеры берутся из Ultralytics")
+
+from sd.bench import replay_tracking, track_metrics  # noqa: E402
 
 
 def synth_raw(n=80, fps=10.0, gap=None):

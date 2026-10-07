@@ -27,8 +27,6 @@ def _csv(name: str) -> pd.DataFrame | None:
 
 
 def tab_photo():
-    st.markdown("**Фото-классификатор «курит / не курит»** на замороженных эмбеддингах (CLIP, ConvNeXt-B) + линейная голова; данные — открытые фото-наборы в `data/` и `data_external/`. "
-                "Что и как проверялось — `docs/ANALYSIS.md`, раздел 9. Команды: `sd.cmd photos audit | embed | eval | train | eval-video`.")
     f = PHOTO_OUT / "audit.json"
     if f.exists():
         rep = json.loads(f.read_text(encoding="utf-8"))
@@ -78,10 +76,9 @@ def _registry_table() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def tab_models():
-    st.markdown("**Модели: подключить, проверить, перенести.** Чужие веса не исполняются: `.pt` (pickle) сканируются, `.onnx`/`.safetensors` не содержат кода, пакеты проекта — только JSON/TXT/safetensors "
-                "с проверкой sha256. Записи пользователя лежат в `models/user_models.yaml` (не затираются обновлением проекта).")
-    part = st.radio("Раздел", ["Реестр", "Подключить свою модель", "Проверить модель", "Перенос на другую машину"], horizontal=True, key="models_part")
+def tab_models(part: str | None = None):
+    if part is None:
+        part = st.radio("Раздел", ["Реестр", "Подключить свою модель", "Проверить модель", "Перенос на другую машину"], label_visibility="collapsed", horizontal=True, key="models_part")
     if part == "Реестр":
         st.dataframe(_registry_table(), hide_index=True)
         b = MT.list_bundles()
@@ -104,7 +101,7 @@ def tab_models():
 
 
 def _add_model():
-    st.markdown("Файл весов (`.pt/.pth` — после сканирования, `.onnx`, `.safetensors`) или репозиторий Hugging Face (запись в реестр; скачивание — отдельной кнопкой).")
+    st.caption("Файл весов (.pt/.pth после сканирования, .onnx, .safetensors) или репозиторий Hugging Face. Чужой код не исполняется.")
     c1, c2, c3 = st.columns(3)
     mid = c1.text_input("id (буквы, цифры, - _ .)", "my-detector")
     kind = c2.selectbox("Тип", list(MT.KINDS), help="detector — YOLO-детектор предмета; pose — поза; photo/vlm/tube — прочие")
