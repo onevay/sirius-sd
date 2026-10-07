@@ -1,0 +1,131 @@
+# Все пороги — здесь, а не в коде (правило руководства §11.2).
+# Любое изменение порога = прогон evaluate + запись в журнал экспериментов (docs/EXPERIMENTS.md).
+# Переопределять из CLI можно так:  sd cycles <video> -s cycles.th_in=0.30 -s cycles.th_out=0.50
+
+project:
+  seed: 42
+
+video:
+  process_fps: 10            # целевая частота обработки (кадров/с); vid_stride = round(fps_источника / process_fps)
+  min_person_height_px: 80   # регламент: человек ниже 80 px по высоте -> IGNORE
+  render_max_width: 1280     # ширина выходного видео с разметкой (экономит время кодирования на CPU)
+
+pose:
+  # Профиль по умолчанию выбран бенчмарком на этом ноутбуке (ANALYSIS.md, 7.1): YOLO26n@960 на встроенной графике Intel через OpenVINO
+  # (18.7 к/с в одиночку) + RTMPose-s для ключевых точек (запястья точнее: ошибка 0.08 против 0.14 ширины плеч; итого ~8 к/с).
+  # Быстрый профиль:  -s pose.refine.enabled=false   Без Intel-графики:  -s pose.runtime=torch -s pose.device=cpu
+  backend: ultralytics       # ultralytics | rtmlib
+  weights: yolo26n-pose      # id из реестра весов (sd models list)
+  runtime: openvino          # torch | openvino  (openvino = экспорт в IR на лету; запуск на intel:cpu / intel:gpu)
+  device: intel:gpu          # torch: cpu | openvino: intel:cpu | intel:gpu
+  imgsz: 960                 # на кадрах 1080p люди мелкие: 640 теряет людей и запястья (руководство, шаг 2)
+  conf: 0.25                 # track_high_thresh трекера: из таких детекций создаются треки
+  conf_low: 0.10             # детектор отдаёт и слабые детекции — ByteTrack использует их во втором проходе (Ultralytics track() с conf=0.25 этого не давал)
+  iou: 0.7
+  max_det: 20
+  kp_conf_min: 0.30          # keypoint считаем видимым при conf >= этого значения
+  refine:                    # уточнение ключевых точек по кропу человека (top-down) — точнее запястья/нос (см. ANALYSIS.md, 7.1)
+    enabled: true
+    method: rtmpose-s        # yolo (второй проход YOLO по кропу мелкого человека) | rtmpose-s | rtmpose-m (RTMPose по рамкам YOLO, все люди)
+    max_height_px: 300       # method=yolo: уточняем только людей ниже этой высоты (px исходного кадра)
+    imgsz: 320               # method=yolo: размер кропа
+    pad: 0.25                # method=yolo: запас вокруг рамки
+    kp_conf_min: 0.30        # method=rtmpose-*: порог видимости (у RTMPose шкала уверенности иная, чем у YOLO)
+
+tracking:
+  tracker: botsort           # botsort | bytetrack
+  track_buffer_sec: 3.0      # держим трек без детекций (регламент: 2–3 с)
+  match_thresh: 0.8
+  new_track_thresh: 0.6
+  gmc_method: none           # камеры статичны; sparseOptFlow — если камера двигается
+  stitch:                    # постобработка (offline): склейка фрагментов одного человека
+    max_gap_sec: 2.0
+    min_iou: 0.3
+    max_center_dist_h: 0.5   # в долях высоты рамки
+  min_track_sec: 1.0
+
+features:
+  mouth_offset: 0.35         # рот ≈ нос + 0.35·(середина плеч − нос)
+  scale_min_h: 0.15          # масштаб s = ширина плеч, зажатая в [0.15, 0.40]·H_рамки (боковой ракурс сжимает плечи)
+  scale_max_h: 0.40
+  fallback_scale_h: 0.25     # плечи не видны: s = H/4 (руководство §5.3)
+  hand_extend: 0.0           # точка кисти = запястье + k·(запястье − локоть); 0 = просто запястье (как в руководстве); см. ANALYSIS.md, раздел 7.3
+  interp_gap_sec: 0.3        # пропуски <= 0.3 с интерполируем, дальше — «нет данных»
+  median_sec: 0.3            # медианный фильтр d_t (сек)
+  smooth_sec: 0.4            # окно Савицкого–Голея (сек)
+  smooth_poly: 2
+  min_visible_frac: 0.5      # < 50% видимости запястья/носа в окне -> кандидат в IGNORE, а не в NEGATIVE
+
+cycles:
+  # КАЛИБРОВКА (ANALYSIS.md, 7.3): пороги руководства 0.35/0.55 по сырому запястью находят лишь 2 из 12 визуально размеченных затяжек (17%),
+  # а плато th_in 0.50–0.80 / th_out 0.70–1.15 — 11 из 12 (92%). Выбран центр плато. Выборка мала — перепроверить на размеченных данных!
+  th_in: 0.65                # вход в AT_MOUTH (в ширинах плеч), гистерезис  (руководство: 0.35)
+  th_out: 0.90               # выход из AT_MOUTH                             (руководство: 0.55)
+  abort_margin: 0.10         # APPROACH -> REST, если d > th_out + abort_margin (рука не дошла до рта)
+  retract_margin: 0.15       # RETRACT -> REST, если d > th_out + retract_margin
+  hold_min_sec: 0.5          # регламент: пауза у рта 0.5–5 с
+  hold_max_sec: 5.0
+  emit_long_hold: true       # удержания 5–hold_cap_sec остаются кандидатами (курильщик держит сигарету у лица подряд ~7 с — клип sm_4); решает классификатор
+  hold_cap_sec: 12.0         # дольше — телефон у уха / долгое питьё -> отбрасываем (long_hold)
+  max_gap_sec: 0.6           # пропуск данных дольше -> цикл прерывается (lost)
+  backtrack_max_sec: 3.0     # поиск начала подъёма руки назад по времени
+  backtrack_v_min: 0.10      # «рука ещё приближается»: скорость сближения > 0.10 ширины плеч/с
+
+events:
+  cycle_th: 0.5              # порог оценки цикла (score)
+  merge_gap_sec: 15.0        # циклы одного человека склеиваются при паузе <= 15 с
+  window_sec: 20.0           # окно «два полных цикла»
+  window_mode: contain       # contain: оба цикла целиком в окне | start_gap: старт–старт <= window (как в примере руководства)
+  object_k: 3                # «устойчиво виден»: предмет найден в >= k из n соседних кадров
+  object_n: 5
+  confidence_threshold: 0.55 # фиксируется в manifest.json ДО скрытого набора
+
+evidence:                    # прямой признак: сигарета/вейп на кропе кисть–рот
+  detectors: [smoking_yolo26s_basant18, smoking_yolo11m_beehzod]
+  imgsz: 320
+  conf: 0.15
+  crop_scale: 1.2            # сторона кропа в ширинах плеч
+  crop_min_px: 48
+  crop_pad_frames_sec: 0.5   # кадры AT_MOUTH ± 0.5 с
+
+tube:                        # «трубка» человека для видео-моделей (руководство §3.3)
+  frames: 16
+  window_sec: 2.5
+  step_sec: 1.0
+  margin: 0.30
+  upper_body_frac: 0.60
+  size: 224
+  xclip_weights: microsoft/xclip-base-patch32-16-frames
+  videomae_weights: MCG-NJU/videomae-base-finetuned-kinetics
+  prompts:
+    - a person smoking a cigarette
+    - a person vaping
+    - a person drinking from a bottle
+    - a person talking on a mobile phone
+    - a person eating
+    - a person touching their face
+    - a person standing and talking
+  positive_prompts: [0, 1]   # индексы промптов «курение»
+
+vlm:                         # VLM-верификатор (раздел 8 docs/ANALYSIS.md); в конвейер по умолчанию не включён
+  enabled: false
+  backend: ollama            # ollama (локальный сервер 127.0.0.1:11434, без облака) | transformers | openai
+  base_url: http://127.0.0.1:11434
+  model: qwen3.5:2b-q4_K_M   # лучший из проверенных: AUC 0.82 на 68 циклах; qwen3.5:2b (Q8_0) не помещается в память iGPU
+  mode: yesno                # ответ одним токеном yes/no; оценка = P(yes) по логитам (letter — вариант с буквами, json — по схеме, без вероятности)
+  crop: mouth                # mouth: крупно рот и активная кисть (лучше) | tube: верх тела человека целиком
+  mouth_scale: 2.5           # сторона кропа рта в ширинах плеч
+  frames: 6
+  crop_size: 224             # кропы «трубки» нативно 224; 336 в 2 раза дороже, выигрыш в пределах шума
+  window_sec: 2.5            # окно вокруг пика цикла
+  temperature: 0
+  threshold: 0.5             # у 2B лучший порог по Юдену 0.47; у 0.8B оценки занижены (≈ 0.1) — переобучать порог на своих данных
+  grey_zone: [0.3, 0.8]      # VLM вызывается только для циклов/событий с оценкой в серой зоне
+  prompt_file: configs/prompts/vlm_yesno.txt
+
+render:
+  show_keypoints: true
+  show_skeleton: true
+  show_percent: true         # проценты уверенности у ключевых точек и моделей
+  show_timeline: true
+  point_radius: 3

@@ -1,0 +1,37 @@
+﻿id,video,tid,start,end,label,note,reviewer
+200,курение__2,5,3.5,5.5,no_gesture,,assistant_visual
+201,курение__2,5,6.5,8.5,no_gesture,,assistant_visual
+202,курение__2025_10_22_12_38_57,1,572.303,574.303,no_gesture,,assistant_visual
+203,курение__2025_10_22_12_38_57,3,587.569,589.569,no_gesture,,assistant_visual
+204,курение__2025_10_22_12_38_57,3,590.569,592.569,no_gesture,,assistant_visual
+205,курение__2025_10_22_12_38_57,3,593.569,595.569,no_gesture,,assistant_visual
+206,курение__2025_10_22_12_38_57,4,580.168,582.168,no_gesture,,assistant_visual
+207,курение__2025_12_08_13_02_26,4,22.42,24.42,no_gesture,,assistant_visual
+208,курение__2025_12_08_13_02_26,4,31.42,33.42,no_gesture,,assistant_visual
+209,курение__2025_12_08_13_02_26,9,36.1,38.1,touch_face,"пожилая женщина, рука у рта/подбородка",assistant_visual
+210,курение__3,2,26.9,28.9,no_gesture,,assistant_visual
+211,курение__4,3,12.7,14.7,no_gesture,,assistant_visual
+212,курение___88,1,15.5,17.5,no_gesture,,assistant_visual
+213,курение__sm_1,8,94.8,96.8,no_gesture,,assistant_visual
+214,курение__sm_1,8,97.8,99.8,no_gesture,,assistant_visual
+215,курение__sm_3,1,79.18,81.18,unsure,женщина в белом: рука у груди/рта?,assistant_visual
+216,курение__sm_3,1,88.18,90.18,unsure,то же,assistant_visual
+217,курение__sm_3,2,82.18,84.18,touch_face,рука к голове/лицу у женщины слева,assistant_visual
+218,курение__sm_3,2,91.18,93.18,no_gesture,,assistant_visual
+219,курение__sm_3,6,76.18,78.18,no_gesture,,assistant_visual
+220,курение__smoking_Jar_1,3,9.5,11.5,no_gesture,,assistant_visual
+221,курение__smoking_Jar_2,5,5.8,7.8,no_gesture,,assistant_visual
+222,лжекурение__2025_11_06_08_23_06,1,18.5,20.5,touch_face,перчатка удерживается у подбородка почти без движения (статичная поза),assistant_visual
+223,лжекурение__2025_11_06_08_33_31,2,10.58,12.58,no_gesture,,assistant_visual
+224,лжекурение__2025_11_06_08_35_37,1,92.74,94.74,no_gesture,,assistant_visual
+225,лжекурение__2025_11_06_08_35_37,2,95.58,97.58,no_gesture,,assistant_visual
+226,лжекурение__drinking_Jar,1,48.5,50.5,no_gesture,,assistant_visual
+227,лжекурение__drinking_Jar,1,51.5,53.5,no_gesture,,assistant_visual
+228,лжекурение__drinking_Jar,1,60.5,62.5,no_gesture,,assistant_visual
+229,лжекурение__drinking_Jar,3,42.5,44.5,no_gesture,,assistant_visual
+230,лжекурение__drinking_Jar,4,42.5,44.5,no_gesture,,assistant_visual
+231,лжекурение__drinking_Jar,4,51.5,53.5,no_gesture,,assistant_visual
+232,лжекурение__smoking_noyabrsk_3,5,172.474,174.474,no_gesture,,assistant_visual
+233,лжекурение__распитие,1,4.5,6.5,no_gesture,,assistant_visual
+234,лжекурение__распитие,2,19.5,21.5,no_gesture,,assistant_visual
+235,лжекурение__распитие_2,4,5.3,7.3,no_gesture,,assistant_visual

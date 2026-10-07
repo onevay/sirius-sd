@@ -1,0 +1,4 @@
+# Профиль для машины без Intel-графики / без OpenVINO: torch на CPU (YOLO26n@960 ≈ 3.7 к/с, с RTMPose-s ≈ 3.9).
+pose:
+  runtime: torch
+  device: cpu

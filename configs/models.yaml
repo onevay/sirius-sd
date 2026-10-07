@@ -1,0 +1,41 @@
+# Реестр весов. `sd models list` — статус, `sd models get <id>` — скачать, `sd models scan <id|путь>` — проверка безопасности .pt.
+# trust: official — официальный источник (Ultralytics / Microsoft / MCG-NJU / OpenMMLab); community — частный автор:
+#        .pt-файлы community-весов НЕ загружаются, пока не пройдут сканирование (sd.safety).
+# Для ручной загрузки: положите файл в models/ под именем `file` — реестр увидит его (sha256 запишется в models/registry.lock.json).
+
+yolo_release_tag: &tag8_4 v8.4.0
+
+models:
+  # ------------------------------ поза + трекинг (Ultralytics, AGPL-3.0) ------------------------------
+  - {id: yolo26n-pose, kind: pose, file: yolo26n-pose.pt, url: "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-pose.pt", license: AGPL-3.0, trust: official, note: "YOLO26 nano, NMS-free, быстрый на CPU"}
+  - {id: yolo26s-pose, kind: pose, file: yolo26s-pose.pt, url: "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s-pose.pt", license: AGPL-3.0, trust: official, note: "YOLO26 small"}
+  - {id: yolo26m-pose, kind: pose, file: yolo26m-pose.pt, url: "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26m-pose.pt", license: AGPL-3.0, trust: official, note: "YOLO26 medium (на этом CPU медленный)"}
+  - {id: yolo26x-pose, kind: pose, file: yolo26x-pose.pt, url: "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x-pose.pt", license: AGPL-3.0, trust: official, note: "«учитель» для оценки качества малых моделей (только на единичных кадрах)"}
+  - {id: yolo11n-pose, kind: pose, file: yolo11n-pose.pt, url: "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n-pose.pt", license: AGPL-3.0, trust: official, note: "YOLO11 nano (модель из руководства)"}
+  - {id: yolo11s-pose, kind: pose, file: yolo11s-pose.pt, url: "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11s-pose.pt", license: AGPL-3.0, trust: official, note: "YOLO11 small"}
+  - {id: yolo11m-pose, kind: pose, file: yolo11m-pose.pt, url: "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11m-pose.pt", license: AGPL-3.0, trust: official, note: "YOLO11 medium (модель из руководства)"}
+
+  # ------------------------------ видео-модели по «трубке» человека ------------------------------
+  - {id: xclip-b32-16, kind: tube, hf_repo: "microsoft/xclip-base-patch32-16-frames", hf_patterns: ["*.json", "*.txt", "model.safetensors"], license: MIT, trust: official, note: "X-CLIP zero-shot видео-текст, 16 кадров"}
+  - {id: videomae-b-k400, kind: tube, hf_repo: "MCG-NJU/videomae-base-finetuned-kinetics", hf_patterns: ["*.json", "model.safetensors"], license: CC-BY-NC-4.0, trust: official, note: "VideoMAE base K400 (есть класс smoking); только некоммерческое использование"}
+
+  # ------------------------------ VLM-верификатор (крошечные модели: на CPU без NVIDIA других не потянуть) ------------------------------
+  # Основной путь — Ollama (локальный сервер, веса в %USERPROFILE%\.ollama\models, а не здесь): `sd.cmd ollama pull qwen3.5:2b-q4_K_M` (Apache-2.0, лучший из проверенных), `qwen3.5:0.8b`; см. раздел 8 ANALYSIS.md.
+  # Ниже — веса для запуска через transformers (SmolVLM2: бесполезна на нашей задаче, оставлена для сравнения; Qwen3.5 в transformers 4.57 не поддерживается).
+  - {id: smolvlm2-500m-video, kind: vlm, hf_repo: "HuggingFaceTB/SmolVLM2-500M-Video-Instruct", hf_patterns: ["*.json", "*.txt", "*.safetensors", "*.model"], license: Apache-2.0, trust: official, note: "500M, понимает видео/мульти-кадры; transformers>=4.50"}
+  - {id: smolvlm2-256m-video, kind: vlm, hf_repo: "HuggingFaceTB/SmolVLM2-256M-Video-Instruct", hf_patterns: ["*.json", "*.txt", "*.safetensors", "*.model"], license: Apache-2.0, trust: official, note: "256M — самая маленькая видео-VLM"}
+
+  # ------------------------------ признаки по фото (классификатор «курит / не курит» по кадру или кропу рта); только safetensors ------------------------------
+  # у openai/clip-vit-base-patch32 нет safetensors (только pytorch_model.bin = pickle) — берём LAION-вариант с model.safetensors
+  - {id: clip-vit-b32, kind: photo, hf_repo: "laion/CLIP-ViT-B-32-laion2B-s34B-b79K", hf_patterns: ["*.json", "*.txt", "model.safetensors"], license: MIT, trust: official, note: "CLIP ViT-B/32 (LAION-2B, OpenCLIP): эмбеддинги изображения (512) и zero-shot по тексту; быстрый на CPU (≈4.4 GFLOPs)"}
+  - {id: convnext-b-in22k, kind: photo, hf_repo: "timm/convnext_base.fb_in22k_ft_in1k", hf_patterns: ["*.json", "model.safetensors"], license: Apache-2.0, trust: official, note: "ConvNeXt-B (Meta, ImageNet-22k): эмбеддинги 1024; ≈15 GFLOPs — на этом CPU ≈0.4 с на картинку"}
+
+  # ------------------------------ детекторы сигареты/вейпа на кропе кисть–рот (community!) ------------------------------
+  - {id: smoking_yolo11m_beehzod, kind: detector, hf_repo: "Beehzod/smoking-detection-finetuned", hf_files: [best.pt], file: smoking_yolo11m_beehzod.pt, license: MIT, trust: community, note: "YOLO11m, класс cigarette; xu-wei/cigarette-all (1613 train img). ~158 загрузок"}
+  - {id: smoking_yolo26s_basant18, kind: detector, hf_repo: "basant18/Smoking-detection-YOLO26s", hf_files: [weights/best.pt], file: smoking_yolo26s_basant18.pt, license: Apache-2.0, trust: community, note: "Roboflow pro-hiyaw/cigarettes-reality-2; mAP50 0.88 на 307 val img"}
+  - {id: smoke_cig_beehzod_yolo11m, kind: detector, hf_repo: "Beehzod/smoke_cigarette-detection2-yolo11m", hf_files: [best.pt], file: smoke_cig_beehzod_yolo11m.pt, license: unknown, trust: community, note: "возможно, классы smoke + cigarette (проверить после загрузки)"}
+
+  # ------------------------------ поза через rtmlib (Apache-2.0 код; веса — см. репозиторий) ------------------------------
+  # rtmlib скачивает ONNX сам в кэш; id нужен только для описания в manifest.json
+  - {id: rtmlib-body-lightweight, kind: pose, rtmlib: {mode: lightweight}, license: "Apache-2.0 (код), веса OpenMMLab", trust: official, note: "YOLOX-tiny + RTMPose-s"}
+  - {id: rtmlib-body-balanced, kind: pose, rtmlib: {mode: balanced}, license: "Apache-2.0 (код), веса OpenMMLab", trust: official, note: "YOLOX-m + RTMPose-m"}

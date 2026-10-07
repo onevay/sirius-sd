@@ -1,0 +1,21 @@
+# В образ попадают только код и конфиги: данные, веса, результаты и окружение монтируются томами или не нужны.
+.venv/
+.git/
+.ultralytics/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+data_external/
+models/
+outputs/
+labels/
+docs/img/
+docs/*.md
+*.mp4
+*.avi
+*.pt
+*.safetensors
+*.onnx
+kernel.errors.txt
+*.log

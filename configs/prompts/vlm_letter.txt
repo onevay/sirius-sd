@@ -1,0 +1,10 @@
+These {n_frames} frames, taken over {seconds:.1f} seconds in time order, show ONE person cropped from a surveillance camera.
+What is the person doing with their hand near the face? Choose one:
+A. smoking a cigarette
+B. vaping
+C. drinking
+D. talking on or looking at a phone
+E. eating
+F. touching or scratching the face or hair
+G. something else
+Answer with the letter only.

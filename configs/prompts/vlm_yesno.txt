@@ -1,0 +1,4 @@
+These {n_frames} frames, taken over {seconds:.1f} seconds in time order, show ONE person cropped from a surveillance camera.
+Is the person smoking right now, that is bringing a cigarette or vape to the mouth and inhaling?
+A hand near the face without a cigarette, drinking, a phone call, eating, scratching or touching the face or hair are NOT smoking.
+Answer with exactly one word: yes or no.

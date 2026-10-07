@@ -1,0 +1,2 @@
+Карточка зеркала divm/hmdb51 на Hugging Face: license: other (у зеркала Serrelab/hmdb51 указано CC BY 4.0 — карточки расходятся). Оригинал — HMDB51 (Kuehne et al., ICCV 2011, Brown University), клипы собраны из фильмов и YouTube: использовать для внутренней оценки, не распространять.
+Источник: https://huggingface.co/datasets/divm/hmdb51

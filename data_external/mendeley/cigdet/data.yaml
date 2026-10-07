@@ -1,0 +1,5 @@
+train: train/images
+test: test/images
+val: test/images
+names:
+  0: cigarette

@@ -1,0 +1,163 @@
+﻿video,tid,peak_t,start,label,start_quality,note,source,reviewer
+курение__1,1,38.6,37.6,unsure,,"ИК, женщина на скамье: телефон/рука у рта",main_cycle,assistant_visual
+курение__1,2,49.2,48.1,unsure,,"у двери, рука у лица",main_cycle,assistant_visual
+курение__1,2,51.85,50.2,smoke,ok,у стены: повторяющиеся подъёмы руки с периодом ~6 с,main_cycle,assistant_visual
+курение__1,2,57.95,57.1,smoke,ok,то же,main_cycle,assistant_visual
+курение__1,2,64.44999999999999,63.3,smoke,early,то же,main_cycle,assistant_visual
+курение__2,6,1.55,0.6,unsure,,ИК толпа: рука у рта,main_cycle,assistant_visual
+курение__2,4,4.4,3.5,unsure,,"вид со спины, рука у головы",main_cycle,assistant_visual
+курение__2,4,5.5,4.8,unsure,,вид со спины,main_cycle,assistant_visual
+курение__2,2,7.5,6.5,smoke,ok,зажигалка/пламя и сигарета в руке,main_cycle,assistant_visual
+курение__2,4,9.5,8.1,unsure,,вид со спины,main_cycle,assistant_visual
+курение__2,11,11.2,9.0,smoke,ok,огонёк сигареты у рта,main_cycle,assistant_visual
+курение__2,6,11.6,10.8,unsure,,вид со спины,main_cycle,assistant_visual
+курение__2025_12_08_13_02_26,2,16.04,14.4,smoke,ok,"вид со спины, рука к капюшону/лицу",main_cycle,assistant_visual
+курение__2025_12_08_13_02_26,2,19.040000000000003,17.44,smoke,,"то же, период ~3 с",main_cycle,assistant_visual
+курение__2025_12_08_13_02_26,2,21.92,21.28,smoke,,то же,main_cycle,assistant_visual
+курение__2025_12_08_13_02_26,2,26.44,23.36,smoke,late,"то же, пауза 5.8 с",main_cycle,assistant_visual
+курение__2025_12_08_13_02_26,2,36.64,35.92,unsure,,,main_cycle,assistant_visual
+курение__2025_12_08_13_02_26,3,37.76,37.36,unsure,,группа у входа,main_cycle,assistant_visual
+курение__2025_12_08_13_02_26,3,38.96,38.16,unsure,,группа у входа,main_cycle,assistant_visual
+курение__3,3,30.5,29.7,smoke,,вид сверху: сигарета у рта,main_cycle,assistant_visual
+курение__3,2,31.9,31.1,smoke,early,вид сверху: сигарета в руке,main_cycle,assistant_visual
+курение__3,3,41.15,40.6,smoke,late,сигарета в руке,main_cycle,assistant_visual
+курение__3,1,44.55,43.8,smoke,ok,сигарета в руке/во рту,main_cycle,assistant_visual
+курение__4,2,5.45,3.0,smoke,late,рука у рта в баре,main_cycle,assistant_visual
+курение__4,2,12.75,11.6,smoke,late,огонёк сигареты,main_cycle,assistant_visual
+курение___88,1,2.6,1.7,phone,ok,рука у уха: телефон,main_cycle,assistant_visual
+курение__sm_1,2,88.667,85.167,smoke,,"рука у лица ~6 с, ночь",main_cycle,assistant_visual
+курение__sm_1,3,88.9175,85.801,smoke,,рука у лица ~4 с,main_cycle,assistant_visual
+курение__sm_1,2,93.6,92.434,unsure,,,main_cycle,assistant_visual
+курение__sm_1,6,93.2505,92.534,no_gesture,,"второй просмотр: ходьба, рука у капюшона, не ко рту",main_cycle,assistant_visual
+курение__sm_1,6,95.467,93.801,touch_face,ok,поправляет капюшон,main_cycle,assistant_visual
+курение__sm_1,2,96.2675,94.767,unsure,,,main_cycle,assistant_visual
+курение__sm_2,1,11.6,10.2,smoke,ok,прикуривание и первая затяжка,main_cycle,assistant_visual
+курение__sm_2,1,19.3,16.5,smoke,,"затяжка, дым",main_cycle,assistant_visual
+курение__sm_3,1,74.72,72.68,unsure,,мужчина в чёрном: рука ко рту,main_cycle,assistant_visual
+курение__sm_3,4,80.80000000000001,79.48,no_gesture,,второй просмотр: ходьба,main_cycle,assistant_visual
+курение__sm_3,3,83.24000000000001,81.8,touch_face,ok,жестикуляция рукой у лица,main_cycle,assistant_visual
+курение__sm_3,5,85.72,84.28,unsure,,рука у рта при разговоре,main_cycle,assistant_visual
+курение__sm_3,2,85.96000000000001,84.92,touch_face,late,жестикуляция,main_cycle,assistant_visual
+курение__sm_3,4,86.44,85.88,unsure,,вид со спины,main_cycle,assistant_visual
+курение__sm_3,5,100.64,99.72,phone,ok,телефон у уха,main_cycle,assistant_visual
+курение__sm_4,1,3.1,0.0,smoke,,"рука у лица ~6 с, дым",main_cycle,assistant_visual
+курение__sm_5,1,13.9,12.5,smoke,ok,сигарета у рта,main_cycle,assistant_visual
+курение__sm_6,1,4.85,2.4,smoke,ok,"затяжка, дым",main_cycle,assistant_visual
+курение__sm_6,1,11.85,9.7,smoke,ok,"затяжка, дым",main_cycle,assistant_visual
+курение__sm_6,1,17.299999999999997,15.6,smoke,ok,"затяжка, дым",main_cycle,assistant_visual
+курение__sm_6,1,21.15,19.7,smoke,ok,"затяжка, дым",main_cycle,assistant_visual
+курение__sm_6,1,23.1,22.2,no_gesture,,второй просмотр: взмах руки при ходьбе (d_min<0 — шум позы),main_cycle,assistant_visual
+курение__sm_9,1,5.4,2.5,smoke,early,затяжка ~4 с,main_cycle,assistant_visual
+курение__sm_y_2,1,2.1,0.5,unsure,,сидит на скамье: еда/вейп?,main_cycle,assistant_visual
+курение__sm_y_2,4,11.4,10.6,unsure,,рука у рта,main_cycle,assistant_visual
+курение__smoking_Jar_1,9,10.9,9.6,smoke,ok,затяжка на ходу,main_cycle,assistant_visual
+курение__smoking_Jar_2,4,5.95,3.5,smoke,ok,сигарета у рта,main_cycle,assistant_visual
+курение__smoking_Jar_2,7,6.75,5.4,smoke,,пожилой мужчина: рука у рта,main_cycle,assistant_visual
+лжекурение__1_drink,1,15.71,13.55,drink,ok,пьёт из прозрачной бутылки,main_cycle,assistant_visual
+лжекурение__1_drink,1,24.585,21.47,drink,ok,пьёт из бутылки,main_cycle,assistant_visual
+лжекурение__2025_11_06_08_15_57,1,2.0,0.88,touch_face,ok,касание лица рукой в перчатке,main_cycle,assistant_visual
+лжекурение__2025_11_06_08_15_57,1,7.200000000000001,6.72,touch_face,ok,касание лица рукой в перчатке,main_cycle,assistant_visual
+лжекурение__2025_11_06_08_15_57,1,8.280000000000001,7.6,touch_face,ok,касание лица рукой в перчатке,main_cycle,assistant_visual
+лжекурение__2025_11_06_08_15_57,1,12.24,10.48,touch_face,ok,касание лица рукой в перчатке,main_cycle,assistant_visual
+лжекурение__2025_11_06_08_15_57,1,16.84,15.68,touch_face,ok,касание лица рукой в перчатке,main_cycle,assistant_visual
+лжекурение__2025_11_06_08_19_11,1,11.4005,10.267,touch_face,ok,касание лица,main_cycle,assistant_visual
+лжекурение__2025_11_06_08_19_11,1,14.4005,12.867,touch_face,ok,рука у уха/лица,main_cycle,assistant_visual
+лжекурение__2025_11_06_08_19_11,1,26.567,25.667,touch_face,ok,касание лица,main_cycle,assistant_visual
+лжекурение__2025_11_06_08_23_06,1,24.233,23.266,touch_face,ok,рука у рта/лица (перчатка),main_cycle,assistant_visual
+лжекурение__2025_11_06_08_33_31,1,10.4,10.08,touch_face,late,рука у рта/лица (перчатка),main_cycle,assistant_visual
+лжекурение__2025_11_06_08_33_31,1,14.12,13.04,touch_face,ok,рука у рта/лица (перчатка),main_cycle,assistant_visual
+лжекурение__2025_11_06_08_33_31,1,20.360000000000003,18.6,touch_face,ok,рука у рта/лица (перчатка),main_cycle,assistant_visual
+лжекурение__2025_11_06_08_33_31,1,28.12,26.92,touch_face,ok,рука у рта/лица (перчатка),main_cycle,assistant_visual
+лжекурение__2025_11_06_08_33_31,1,34.400000000000006,33.4,touch_face,ok,рука у рта/лица (перчатка),main_cycle,assistant_visual
+лжекурение__2025_11_06_08_35_37,1,74.56,74.24,touch_face,late,касание лица,main_cycle,assistant_visual
+лжекурение__2025_11_06_08_35_37,1,77.24000000000001,75.96,touch_face,ok,касание лица,main_cycle,assistant_visual
+лжекурение__2025_11_06_08_35_37,2,102.04,100.32,phone,ok,рука у уха: телефон,main_cycle,assistant_visual
+лжекурение__drinking_Jar,3,54.75,53.9,drink,,пьёт из ёмкости,main_cycle,assistant_visual
+лжекурение__smoking_noyabrsk_2,1,231.2105,229.692,unsure,,"у входа: телефон, затем рука у рта",main_cycle,assistant_visual
+лжекурение__smoking_noyabrsk_2,1,241.9555,240.797,unsure,,тонкий предмет у рта — вейп/ручка? в папке лжекурение,main_cycle,assistant_visual
+лжекурение__распитие,2,8.333,8.0,unsure,,"второй просмотр: наклон, рука у лица?",main_cycle,assistant_visual
+лжекурение__распитие,1,10.5835,9.917,no_gesture,,"второй просмотр: пожилая женщина у контейнеров, рука не у рта",main_cycle,assistant_visual
+лжекурение__распитие,2,13.542,13.0,drink,late,пьёт из банки,main_cycle,assistant_visual
+лжекурение__распитие,2,28.9165,26.833,drink,ok,пьёт из банки ~3 с,main_cycle,assistant_visual
+лжекурение__распитие_2,1,2.65,1.7,drink,ok,банка у рта,main_cycle,assistant_visual
+лжекурение__распитие_2,4,11.45,10.7,drink,late,пьёт из банки,main_cycle,assistant_visual
+лжекурение__распитие_2,4,17.0,15.3,unsure,,,main_cycle,assistant_visual
+лжекурение__распитие_2,4,22.9,21.3,drink,ok,пьёт из ёмкости,main_cycle,assistant_visual
+лжекурение__распитие_2,4,25.4,24.0,unsure,,"второй просмотр: наклон, рука у лица?",main_cycle,assistant_visual
+курение__1,2,54.35,53.8,unsure,,"жест есть, тип не определить по кадрам",pool_extra,assistant_visual
+курение__1,2,59.2,58.6,unsure,,"жест есть, тип не определить по кадрам",pool_extra,assistant_visual
+курение__2,2,0.45,0.0,unsure,,"жест есть, тип не определить по кадрам",pool_extra,assistant_visual
+курение__2,3,2.5,0.1,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__2,7,1.7,1.0,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__2,2,3.85,3.2,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__2,13,9.2,7.5,unsure,,"жест есть, тип не определить по кадрам",pool_extra,assistant_visual
+курение__2,3,8.3,7.6,smoke,,прикуривание: огонь зажигалки у рта,pool_extra,assistant_visual
+курение__2,5,12.05,10.8,touch_face,,поправляет волосы,pool_extra,assistant_visual
+курение__2,14,12.15,11.7,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__2025_10_22_12_38_57,1,583.932,583.065,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__2025_12_08_13_02_26,3,27.56,24.96,unsure,,"жест есть, тип не определить по кадрам",pool_extra,assistant_visual
+курение__2025_12_08_13_02_26,1,33.760000000000005,31.44,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__2025_12_08_13_02_26,11,40.08,39.12,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__2025_12_08_13_02_26,11,43.2,42.32,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__3,2,34.0,32.8,smoke,,сигарета видна в руке у лица (вид сверху),pool_extra,assistant_visual
+курение__3,1,40.1,37.4,smoke,,сигарета видна в руке у лица (вид сверху),pool_extra,assistant_visual
+курение__3,3,39.3,38.0,smoke,,сигарета видна в руке у лица (вид сверху),pool_extra,assistant_visual
+курение__4,1,4.8,0.0,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__4,3,6.5,5.3,touch_face,,рука у лица,pool_extra,assistant_visual
+курение__4,3,8.7,8.3,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__4,1,10.65,9.7,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__4,1,15.55,14.1,drink,,бокал у груди/подбородка,pool_extra,assistant_visual
+курение__5,1,2.85,1.6,smoke,late,сигарета у рта; рука поднята уже за ~0.4 с до старта автомата,pool_extra,assistant_visual
+курение__sm_1,3,82.934,81.2,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_1,3,95.5175,95.001,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_1,9,97.2005,96.334,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_2,1,7.4,5.3,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_3,5,73.2,72.68,unsure,,"жест есть, тип не определить по кадрам",pool_extra,assistant_visual
+курение__sm_3,5,81.24000000000001,80.68,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_3,4,83.60000000000001,83.08,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_5,1,9.2,7.8,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_y_2,4,1.95,0.9,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_y_2,4,4.35,3.7,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_y_2,2,7.4,5.9,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_y_2,4,6.7,5.9,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_y_2,1,10.75,7.5,unsure,,"жест есть, тип не определить по кадрам",pool_extra,assistant_visual
+курение__sm_y_2,4,9.15,8.6,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__sm_y_2,3,12.3,10.9,unsure,ok,"рука ко рту у сидящего подростка, тип неясен",pool_extra,assistant_visual
+курение__sm_y_2,4,12.95,12.4,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__smoking_Jar_2,5,10.1,9.4,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+курение__smoking_Jar_2,1,12.7,12.1,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__1_drink,1,5.75,3.59,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__2025_11_06_08_13_58,1,19.04,18.48,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_13_58,1,21.6,20.8,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_13_58,1,28.24,27.44,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_13_58,1,32.04,31.36,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_13_58,1,35.36,34.4,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_13_58,1,41.120000000000005,40.32,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_19_11,1,5.6005,4.867,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_19_11,1,8.4335,7.267,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_19_11,1,17.4005,16.067,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_19_11,1,20.567,19.667,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_23_06,1,27.733,26.733,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_23_06,1,29.9995,28.533,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_33_31,1,16.32,15.36,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_33_31,1,23.82,22.88,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_33_31,1,31.56,30.04,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_33_31,1,36.88,35.8,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_33_31,1,39.0,38.04,touch_face,ok,актриса: перчатка у лица/щеки,pool_extra,assistant_visual
+лжекурение__2025_11_06_08_35_37,1,80.48000000000002,79.4,touch_face,ok,перчатка у подбородка,pool_extra,assistant_visual
+лжекурение__drinking_Jar,8,52.55,51.6,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__drinking_Jar,3,57.0,56.5,unsure,,"жест есть, тип не определить по кадрам",pool_extra,assistant_visual
+лжекурение__smoking_noyabrsk_3,6,189.8255,188.308,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__распитие,1,8.625,7.417,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__распитие,2,12.542,12.167,unsure,,"жест есть, тип не определить по кадрам",pool_extra,assistant_visual
+лжекурение__распитие,1,15.333,14.917,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__распитие,1,18.7915,18.25,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__распитие,1,21.3335,19.5,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__распитие_2,3,5.8500000000000005,3.4,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__распитие_2,1,6.2,5.6,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__распитие_2,1,7.6,6.8,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__распитие_2,3,10.2,8.5,phone,,"телефон у груди, смотрит в экран",pool_extra,assistant_visual
+лжекурение__распитие_2,1,9.8,9.2,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__распитие_2,1,12.4,10.9,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual
+лжекурение__распитие_2,1,14.7,13.7,touch_face,ok,поправляет капюшон,pool_extra,assistant_visual
+лжекурение__распитие_2,1,18.85,18.4,no_gesture,,"нет движения руки ко рту (шум позы, смена ID, ходьба, руки у груди)",pool_extra,assistant_visual

@@ -1,0 +1,5 @@
+# Профиль «быстро»: YOLO26n@960 на iGPU без уточнения RTMPose — ~19 к/с инференса (запястья хуже: ошибка 0.14 против 0.08 ширины плеч).
+# Использование:  sd.cmd run sm_3 --config configs/profiles/fast.yaml
+pose:
+  refine:
+    enabled: false

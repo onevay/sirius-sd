@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smoking-detector"
+version = "0.1.0"
+description = "Детекция курения по видео: поза + трекинг -> циклы жеста -> события по регламенту"
+readme = "README.md"
+requires-python = ">=3.11"
+# Точные версии лежат в requirements.txt / requirements.lock.txt; здесь только список верхнего уровня.
+dependencies = [
+  "numpy", "opencv-python", "pandas", "pyarrow", "scipy", "scikit-learn", "lightgbm",
+  "pyyaml", "typer", "rich", "tqdm", "imageio-ffmpeg", "matplotlib", "plotly", "streamlit",
+  "torch", "torchvision", "timm", "ultralytics", "openvino", "onnxruntime", "rtmlib",
+  "transformers", "huggingface-hub", "safetensors", "pillow", "psutil",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+sd = "sd.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

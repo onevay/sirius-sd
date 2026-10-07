@@ -1,0 +1,35 @@
+# Верхний уровень с точными версиями (проверено на Python 3.13, Windows 11). Полный список — requirements.lock.txt.
+# torch ставится CPU-сборкой с PyPI (для Windows это CPU-колесо). Установка: python -m venv .venv ; .venv\Scripts\python -m pip install -r requirements.txt ; .venv\Scripts\python -m pip install -e . --no-deps
+# rtmlib нужно ставить с --no-deps (он тянет opencv-contrib, что ломает единственную сборку cv2):  pip install --no-deps rtmlib==0.0.16
+numpy==2.2.6
+opencv-python==4.12.0.88
+pandas==2.3.2
+pyarrow==25.0.1
+scipy==1.16.1
+scikit-learn==1.7.2
+lightgbm==4.7.0
+PyYAML==6.0.2
+typer==0.19.2
+rich==14.2.0
+tqdm==4.70.1
+imageio-ffmpeg==0.6.0
+matplotlib==3.10.5
+plotly==6.4.0
+streamlit==1.65.0
+pytest==9.1.1
+torch==2.7.1
+torchvision==0.22.1
+timm==1.0.30             # эмбеддинги ConvNeXt для фото-классификатора (веса — safetensors в models/hf)
+ultralytics==8.4.174
+openvino==2026.4.1
+onnxruntime==1.23.1
+rtmlib==0.0.16
+transformers==4.57.1
+num2words==0.5.14      # нужен процессору SmolVLM (AutoProcessor падает без него)
+huggingface-hub==0.36.2
+safetensors==0.6.2
+pillow==12.3.0
+psutil==7.2.2
+lap==0.5.13
+joblib==1.6.0
+httpx==0.28.1

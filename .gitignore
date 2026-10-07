@@ -1,0 +1,14 @@
+# окружение и кэши
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ultralytics/
+*.egg-info/
+
+# исходные записи и результаты не коммитим (приватность: запись с объекта нельзя выкладывать в облако/репозитории)
+data/
+models/
+outputs/
+labels/*.csv
+!labels/README.md
