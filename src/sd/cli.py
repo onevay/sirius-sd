@@ -1402,7 +1402,55 @@ def review_all(per_video: Annotated[int, typer.Option(help="сколько ци�
     console.print(f"каталог: {OUTPUTS / 'analysis' / 'review'}")
 
 
-@app.command(help="Запустить веб-интерфейс анализа этапов (Streamlit).")
+@app.command("eval", help="Оценка на выбранных папках: события → метрики с опорой на целевую F1 (интервал, бюджет ошибок, порог, причины ошибок); запись в журнал outputs/experiments/. "
+                          "Эталон — labels/events_gt.csv (страница «Разметка») или имя папки (--mode clips).")
+def eval_cmd(dirs: Annotated[list[Path], typer.Option("--dir", "-d", help="папка с видео (можно несколько раз)")],
+             profile: Annotated[list[str], typer.Option("--profile", "-p", help="профиль из configs/experiments (можно несколько — сравнение)")] = None,
+             mode: Annotated[str, typer.Option(help="events — по ручному эталону | clips — по имени папки")] = "events",
+             role: Annotated[str, typer.Option(help="validation | hidden (порог из профиля, подбор запрещён)")] = "validation",
+             policy: Annotated[str, typer.Option(help="plateau | best | fixed — как выбрать порог (только validation)")] = "plateau",
+             target_f1: Annotated[float, typer.Option(help="целевая Event F1")] = 0.80,
+             max_sec: Annotated[Optional[float], typer.Option(help="только первые N секунд каждого клипа")] = None,
+             roi: Annotated[Optional[Path], typer.Option(help="roi.json")] = None,
+             no_cache: Annotated[bool, typer.Option("--no-cache")] = False) -> None:
+    from . import profiles as PR
+    from . import runner as RN
+
+    profs = [PR.load(p) for p in profile] if profile else [PR.default_profile()]
+    rows = []
+    for p in profs:
+        out = RN.evaluate_dirs([str(d) for d in dirs], p, mode=mode, role=role, policy="fixed" if role == "hidden" else policy, target_f1=target_f1, use_cache=not no_cache,
+                               max_sec=max_sec, roi_path=str(roi) if roi else None, progress=lambda i, n, m: console.print(f"  [{i}/{n}] {m}"))
+        m, b, ci = out.report.metrics, out.report.budget, out.report.ci.get("f1") or (None, None)
+        rows.append([p.name, f"{m['f1']:.3f}", f"{ci[0]:.2f}–{ci[1]:.2f}" if ci[0] is not None else "—", f"{m['precision']:.3f}", f"{m['recall']:.3f}", f"{m['tp']}/{m['fp']}/{m['fn']}",
+                     "—" if m["fp_per_hour"] is None else f"{m['fp_per_hour']:.1f}", f"{m['threshold']:.2f}", f"{int(b['errors'])}/{int(b['allowed'])}", "да" if b["reached"] else "нет"])
+        for n in out.report.notes:
+            console.print(f"[yellow]! {n}[/]")
+        console.print(f"журнал: outputs/experiments/{out.run_id}")
+    _tbl(f"Event F1 (цель {target_f1:.2f})", ["профиль", "F1", "95%", "P", "R", "TP/FP/FN", "FP/ч", "порог", "ошибок/допустимо", "цель"], rows)
+
+
+@app.command("gt", help="Эталон событий (labels/events_gt.csv): сколько клипов размечено, предупреждения о разметке, экспорт в формате организаторов (--export файл.csv).")
+def gt_cmd(dirs: Annotated[Optional[list[Path]], typer.Option("--dir", "-d", help="показать только клипы этих папок")] = None,
+           export: Annotated[Optional[Path], typer.Option(help="записать эталон в формате организаторов")] = None) -> None:
+    from . import gt as GT
+    from . import library as LIB
+
+    df = GT.load()
+    ids = set(LIB.clip_ids(LIB.videos_in(dirs))) if dirs else None
+    sub = df if ids is None else df[df.clip_id.isin(ids)]
+    console.print(f"{GT.default_path()}: строк {len(df)}, в выборке {len(sub)}; POSITIVE {int((sub.label == 'POSITIVE').sum())}, NEGATIVE {int((sub.label == 'NEGATIVE').sum())}, IGNORE {int((sub.label == 'IGNORE').sum())}")
+    if ids is not None:
+        st = GT.clip_status(df, sorted(ids))
+        console.print(f"клипов {len(st)}, размечено {int(st.reviewed.sum())}")
+    for w in GT.validate(sub):
+        console.print(f"[yellow]! {w}[/]")
+    if export:
+        GT.export_organizer(df, ids).to_csv(export, index=False)
+        console.print(f"экспорт: {export}")
+
+
+@app.command(help="Запустить веб-интерфейс (Streamlit): Оценка, Просмотр, Разметка, Модели, Этапы.")
 def ui(port: int = 8501, headless: bool = True,
        host: Annotated[str, typer.Option(help="адрес привязки; по умолчанию только эта машина (обработка локальная). В контейнере: 0.0.0.0 + публикация порта на 127.0.0.1 хоста")] = "127.0.0.1") -> None:
     import subprocess

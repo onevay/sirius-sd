@@ -1,3 +1,4 @@
+import pytest
 """Окружение: телеметрия Ultralytics выключена ДО импорта библиотеки (иначе при чистых настройках первый запуск мог бы отправить анонимное событие)."""
 import os
 import subprocess
@@ -6,6 +7,7 @@ import textwrap
 
 
 def test_ultralytics_analytics_disabled_even_with_fresh_settings(tmp_path):
+    pytest.importorskip("ultralytics")
     code = textwrap.dedent("""
         import os
         import sd._env  # noqa: F401
