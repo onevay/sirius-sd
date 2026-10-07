@@ -83,10 +83,17 @@ def evaluate(preds: Sequence[Pred], gts: Sequence[GT], expand: float = 3.0, min_
     ign = [g for g in gts if g.label == "IGNORE"]
 
     # 1) предсказания, подавляемые IGNORE (не FP, если не пересекают позитив)
+    ign_by_clip: dict[str, list[tuple[float, float]]] = {}
+    for g in sorted(ign, key=lambda g: g.start):   # объединяем перекрывающиеся IGNORE: иначе общий участок считался бы дважды и доля превышала бы 1
+        iv = ign_by_clip.setdefault(g.clip_id, [])
+        if iv and g.start <= iv[-1][1]:
+            iv[-1] = (iv[-1][0], max(iv[-1][1], g.end))
+        else:
+            iv.append((g.start, g.end))
     suppressed = set()
     for pi, p in enumerate(preds):
         dur = max(p.end - p.start, 1e-9)
-        on_ign = sum(overlap(p.start, p.end, g.start, g.end) for g in ign if g.clip_id == p.clip_id)
+        on_ign = sum(overlap(p.start, p.end, a, b) for a, b in ign_by_clip.get(p.clip_id, ()))
         touches_pos = any(gts[gi].clip_id == p.clip_id and overlap(p.start, p.end, gts[gi].start - expand, gts[gi].end + expand) > 0
                           for gi in pos)
         if on_ign / dur >= ignore_frac and not touches_pos:
