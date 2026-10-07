@@ -5,6 +5,7 @@
 
 | документ | что внутри |
 |---|---|
+| [docs/AUDIT_AND_CHANGES.md](docs/AUDIT_AND_CHANGES.md) | **аудит версии, что изменено в интерфейсе/разметке/оценке, как пользоваться, анализ улучшений** |
 | [docs/ANALYSIS.md](docs/ANALYSIS.md) | **главный файл с выводами**: источники и подходы, EDA, качество каждой части пайплайна на ваших видео, железо и VLM, решения и следующие шаги |
 | [docs/CLI.md](docs/CLI.md) | как проверять каждую часть пайплайна из командной строки, что рисуется на видео |
 | [docs/DATA_AND_WEIGHTS.md](docs/DATA_AND_WEIGHTS.md) | какие веса уже скачаны, что можно скачать вручную (Kaggle/Roboflow), лицензии, безопасность `.pt` |
@@ -33,7 +34,10 @@ sd.cmd fetch-videos hmdb51 --per-class 60   # открытые видео (ку�
 sd.cmd start-eval                           # качество детекции начала цикла по меткам жестов
 sd.cmd doctor                               # проверка окружения (на другой машине / в контейнере)
 sd.cmd resources                            # что занимает ОЗУ/CPU (подозрительные процессы помечаются, чужие не останавливаются)
-sd.cmd ui                                   # веб-интерфейс: этапы, ▶ Распознавание, Плеер, Фото-модель, Модели (подключение и проверка своих моделей): http://localhost:8501
+sd.cmd ui                                   # веб-интерфейс: Оценка · Просмотр · Разметка · Модели · Этапы: http://localhost:8501
+sd.cmd eval -d data/курение -d data/лжекурение -p baseline   # Event F1 по эталону событий на выбранных папках (журнал outputs/experiments/)
+sd.cmd gt -d data/курение                   # состояние эталона событий (labels/events_gt.csv)
+python -m sd.run --input clips/ --profile final --out preds.csv   # единая команда запуска: preds.csv + manifest
 sd.cmd test                                 # юнит-тесты
 ```
 Видео из `data/` можно называть коротким именем (`sm_3`, `5`) или `video_id` (`курение__5`). Все команды и опции — [docs/CLI.md](docs/CLI.md).
@@ -69,10 +73,13 @@ src/sd/
   photo_*.py cli_photos.py    фото-датасеты: загрузка, аудит, эмбеддинги (OpenVINO), классификатор, перенос на кропы видео
   detector_eval.py video_fetch.py clips.py   проверка детекторов предмета; открытые видео; прогон по клипам «папка = класс»
   model_tools.py doctor.py resources.py      подключение и проверка своих моделей, экспорт/импорт пакетов; окружение; ресурсы
-  ui/app.py                   Streamlit: вкладка на каждый этап + разметка + обучение; ui/tabs_*.py, ui/player.py — Распознавание, Плеер, Фото-модель, Модели
+  gt.py evaluation.py runner.py   эталон событий; метрики вокруг F1 (порог, интервал, бюджет ошибок, причины); прогон выбранных папок и журнал экспериментов
+  profiles.py catalog.py roi.py   профили моделей (configs/experiments/*.yaml), каталог доступных моделей, зона интереса
+  run.py                      `python -m sd.run`: единая команда запуска (preds.csv + manifest)
+  ui/                         Streamlit: app.py (навигация), page_eval / page_view / page_label / page_models / page_stages, labeler (видео-разметчик)
   eda.py bench.py hw.py       EDA, бенчмарки, отчёт о железе
   safety.py models.py         сканер .pt перед загрузкой, реестр и загрузка весов
-tests/                        ⟦TESTS_N⟧ юнит-тестов (циклы, события, evaluate, признаки, фото-конвейер, пакеты моделей, интерфейс, окружение, безопасность весов, обучение): sd.cmd test
+tests/                        243 юнит-теста (циклы, события, evaluate, признаки, фото-конвейер, пакеты моделей, интерфейс, окружение, безопасность весов, обучение): sd.cmd test
 Dockerfile docker-compose.yml  запуск в контейнере (docs/DOCKER.md); сборка не проверялась
 data/  models/  outputs/      видео, веса, артефакты запусков (не коммитить; приватность)
 ```
