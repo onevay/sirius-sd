@@ -159,7 +159,8 @@ def stage_features(tr: Tracks, cfg: dict, rd: Path, force: bool = False) -> pd.D
     d = rd / "features" / _feat_hash(cfg)
     f = d / "series.parquet"
     if f.exists() and not force:
-        return pd.read_parquet(f)
+        cached = pd.read_parquet(f)
+        return cached if "tid" in cached.columns else _empty_series()      # кэш запуска без людей, записанный до исправления: пустая таблица без колонок
     parts = []
     for tid in tr.tids:
         rows, kp = tr.of(tid)
@@ -167,10 +168,15 @@ def stage_features(tr: Tracks, cfg: dict, rd: Path, force: bool = False) -> pd.D
         s = build_series(grid, rows, kp, cfg)
         s.insert(0, "tid", tid)
         parts.append(s)
-    out = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+    out = pd.concat(parts, ignore_index=True) if parts else _empty_series()
     d.mkdir(parents=True, exist_ok=True)
     out.to_parquet(f, index=False)
     return out
+
+
+def _empty_series() -> pd.DataFrame:
+    """Запуск без единого человека (пустой кадр, сцена без людей): таблица без строк, но с ключевыми колонками — этапы ниже работают без ветвлений."""
+    return pd.DataFrame({"tid": pd.Series(dtype="int64"), "frame": pd.Series(dtype="int64"), "t": pd.Series(dtype="float64")})
 
 
 # ---------------------------------------------------------------------------------------------- cycles
@@ -179,7 +185,7 @@ def stage_cycles(series: pd.DataFrame, cfg: dict, rd: Path, force: bool = False)
     if (d / "cycles.parquet").exists() and not force:
         return pd.read_parquet(d / "cycles.parquet"), pd.read_parquet(d / "rejected.parquet"), pd.read_parquet(d / "states.parquet")
     cyc_rows, rej_rows, st_rows = [], [], []
-    for tid, s in series.groupby("tid"):
+    for tid, s in (series.groupby("tid") if "tid" in series.columns else []):
         s = s.reset_index(drop=True)
         cycles, rejected, states = find_cycles(s, cfg, tid=int(tid))
         for c in cycles:

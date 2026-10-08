@@ -63,9 +63,9 @@ def _experiment() -> None:
 
     with st.spinner("готовим копию видео…"):
         prox = ensure_proxy(video)
-    from sd.ui.labeler import video_data_uri
+    from sd.ui.media import media_src
 
-    uri, warn = video_data_uri(prox)
+    uri, warn = media_src(prox)
     if warn:
         st.warning(warn)
     tracks, src = {}, (0, 0)
@@ -107,7 +107,10 @@ def _run_dir() -> None:
     video = d / "overlay.mp4" if (d / "overlay.mp4").exists() else None
     data = build_data(cy, ev, 0.0, 15.0, w0)
     data["duration"] = float((w1 - w0) if w1 is not None else (cy["end"].max() + 5 - w0 if len(cy) else 30.0))
-    html, warn = player_html(video, data)
+    from sd.ui.media import media_src
+
+    uri, warn = media_src(video) if video else (None, None)
+    html, _ = player_html(None, data, video_uri=uri)
     if video is None:
         st.warning("В этом прогоне нет overlay.mp4 (запуск без видео).")
     if warn:

@@ -69,6 +69,12 @@ def _local(spec_id: str) -> Path:
 
 
 # ------------------------------------------------------------------------------------------ torch
+def torch_device(torch) -> str:
+    """Устройство torch-эмбеддеров: переменная окружения SD_TORCH_DEVICE (cpu | cuda | cuda:0). Нет CUDA — cpu, даже если просили cuda."""
+    want = os.environ.get("SD_TORCH_DEVICE", "cpu").strip().lower() or "cpu"
+    return want if want == "cpu" or (want.startswith("cuda") and torch.cuda.is_available()) else "cpu"
+
+
 def build_torch(name: str):
     """(torch-модуль «картинка → эмбеддинг», torch). Для clip эмбеддинг нормирован по L2."""
     import torch
@@ -102,19 +108,23 @@ class TorchEmbedder:
     def __init__(self, name: str):
         self.name, self.dim = name, DIM[name]
         self.model, self.torch, self._full = build_torch(name)
+        self.device = torch_device(self.torch)
+        if self.device != "cpu":
+            self.model.to(self.device)
+            self._full.to(self.device)
         self._text: np.ndarray | None = None
 
     def embed(self, rgb: list[np.ndarray]) -> np.ndarray:
         with self.torch.no_grad():
-            return self.model(self.torch.from_numpy(normalize(rgb, self.name))).numpy().astype(np.float32)
+            return self.model(self.torch.from_numpy(normalize(rgb, self.name)).to(self.device)).cpu().numpy().astype(np.float32)
 
     def text_features(self, prompts: dict[str, str]) -> np.ndarray:
         from transformers import CLIPTokenizer
 
         tok = CLIPTokenizer.from_pretrained(_local("clip-vit-b32"))(list(prompts.values()), padding=True, return_tensors="pt")
         with self.torch.no_grad():
-            t = self._full.get_text_features(**tok)
-        return (t / t.norm(dim=-1, keepdim=True)).numpy().astype(np.float32)
+            t = self._full.get_text_features(**{k: v.to(self.device) for k, v in tok.items()})
+        return (t / t.norm(dim=-1, keepdim=True)).cpu().numpy().astype(np.float32)
 
 
 # ------------------------------------------------------------------------------------------ OpenVINO
@@ -182,7 +192,7 @@ class OVEmbedder:
 
 def make_embedder(name: str, backend: str = "auto"):
     """backend: ov | torch | auto (ov, если IR уже экспортирован и есть openvino, иначе torch)."""
-    if backend in ("ov", "auto") and ov_path(name).exists():
+    if backend in ("ov", "auto") and ov_path(name).exists() and not (backend == "auto" and os.environ.get("SD_TORCH_DEVICE", "cpu").lower().startswith("cuda")):
         try:
             return OVEmbedder(name)
         except Exception:

@@ -1,0 +1,10 @@
+name: mvp
+description: MVP хакатона — поза YOLO26n@960 (OpenVINO iGPU) + RTMPose-s, BoT-SORT; классификатор цикла cycle_mvp (предмет двух детекторов + пауза + zero-shot CLIP «курение против питья/телефона»); пороги цикла 0.4 и события 0.55 зафиксированы по oof-плато (`sd oof-eval`)
+config:
+  events.cycle_th: 0.4
+  events.confidence_threshold: 0.55
+options:
+  cycle_bundle: models/cycle/cycle_mvp
+  photo_bundle: models/photo/photo_v2
+  objects: [smoking_yolo11m_beehzod, smoking_yolo26s_basant18]
+  vlm_mode: "off"

@@ -17,6 +17,8 @@
         "true",
         "--server.fileWatcherType",
         "none",
+        "--server.enableStaticServing",
+        "true",
         "--browser.gatherUsageStats",
         "false"
       ],
@@ -38,10 +40,33 @@
         "true",
         "--server.fileWatcherType",
         "none",
+        "--server.enableStaticServing",
+        "true",
         "--browser.gatherUsageStats",
         "false"
       ],
       "port": 8502
+    },
+    {
+      "name": "operator-app",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "streamlit",
+        "run",
+        "src/sd/ui/user_app.py",
+        "--server.port",
+        "8503",
+        "--server.address",
+        "127.0.0.1",
+        "--server.headless",
+        "true",
+        "--server.fileWatcherType",
+        "none",
+        "--browser.gatherUsageStats",
+        "false"
+      ],
+      "port": 8503
     }
   ]
 }

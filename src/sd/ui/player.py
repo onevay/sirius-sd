@@ -36,14 +36,14 @@ canvas{width:100%;display:block;background:var(--panel);border:1px solid var(--g
 .er{margin:3px 0;padding:4px 6px;border-radius:6px;border:1px solid var(--grid);cursor:pointer}.er:hover{border-color:var(--hot)}
 .ev{margin:3px 0;padding:4px 6px;border-radius:6px;border:1px solid var(--grid);cursor:pointer}.ev:hover{border-color:var(--hot)}.mut{color:var(--mut)}
 </style></head><body tabindex="0"><div class="wrap"><div>
-<div class="vw"><video id="v" controls preload="auto" playsinline __SRC__></video><canvas id="ov"></canvas></div>
+<div class="vw"><video id="v" controls preload="metadata" playsinline __SRC__></video><canvas id="ov"></canvas></div><div id="verr" class="mut"></div>
 <div class="bar"><button id="pp">▶/⏸</button><button id="bk">⏮ кадр</button><button id="fw">кадр ⏭</button><button id="pc">◀ цикл</button><button id="nc">цикл ▶</button>
 <button id="lp">⟲ цикл</button><button id="bx" class="on">рамки</button><button id="pe">◀ ошибка</button><button id="ne">ошибка ▶</button><span class="mut">скорость</span><button id="sl">−</button><b id="sp">1×</b><button id="sf">+</button><span class="mut" id="tm"></span></div>
 <canvas id="tl" height="__H__"></canvas>
 <div class="mut" style="margin-top:4px">клик — перемотка · двойной клик по циклу — зацикливание · цвет цикла = оценка · красная рамка = событие · зелёная = эталон · <b>E</b>/<b>Shift+E</b> — следующая/предыдущая ошибка</div>
 </div><div class="side"><div id="cur"></div><hr style="border:0;border-top:1px solid var(--grid);margin:8px 0"><h4>События</h4><div id="evs"></div><div id="errh"></div><div id="errs"></div></div></div>
 <script>
-const D=__DATA__;const v=document.getElementById('v'),cv=document.getElementById('tl'),cx=cv.getContext('2d');
+const D=__DATA__;const v=document.getElementById('v');v.addEventListener('error',()=>{const e=v.error,m=document.getElementById('verr');m.textContent='Видео не воспроизводится в этом браузере (код '+(e?e.code:'?')+(e&&e.message?': '+e.message:'')+'). ';const s=v.currentSrc||v.src;if(s&&!s.startsWith('data:')){const a=document.createElement('a');a.href=s;a.target='_blank';a.textContent='Открыть файл отдельно';m.appendChild(a)}});const _v=v,cv=document.getElementById('tl'),cx=cv.getContext('2d');
 D.gt=D.gt||[];D.errors=D.errors||[];D.tracks=D.tracks||{};const ntop=(D.gt.length?1:0)+(D.errors.length?1:0);
 const fps=D.fps||15,off=D.offset||0,tids=D.tids,rowH=22,pad=18;function ry(i){return pad+(ntop+i)*rowH}let showBox=true;let dur=D.duration||0;const now=()=>v.currentTime+off;let loop=null,speeds=[0.1,0.25,0.5,1,1.5,2,4],si=3;
 function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}

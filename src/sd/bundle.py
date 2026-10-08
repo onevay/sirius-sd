@@ -99,13 +99,13 @@ def oof_members(X: pd.DataFrame, y: np.ndarray, groups: np.ndarray, spec: dict[s
 
 
 def train_bundle(X: pd.DataFrame, y: np.ndarray, groups: np.ndarray, spec: dict[str, dict], out_dir: Path, meta: dict | None = None, n_splits: int = 5,
-                 repeats: int = 3, seed: int = 0) -> dict:
+                 repeats: int = 3, seed: int = 0, calibrate: bool = True) -> dict:
     """OOF по членам → калибровка ансамбля → финальное обучение на всех данных → пакет на диск. Возвращает manifest."""
     from .feature_auc import _auc
 
     oof = oof_members(X, y, groups, spec, n_splits, repeats, seed)
     ens = np.mean([oof[n] for n in spec], axis=0)
-    iso = IsotonicRegression(out_of_bounds="clip").fit(ens, y)
+    iso = IsotonicRegression(out_of_bounds="clip").fit(ens, y) if calibrate else None   # без калибровки оценка = среднее членов, как в out-of-fold: пороги, подобранные по oof, переносятся как есть
     members, boosters = {}, {}
     for n, s in spec.items():
         st = fit_member(s["kind"], X, y, s["features"], seed=seed, **s.get("params", {}))
@@ -117,13 +117,16 @@ def train_bundle(X: pd.DataFrame, y: np.ndarray, groups: np.ndarray, spec: dict[
     for n, txt in boosters.items():
         (out_dir / f"lgbm_{n}.txt").write_text(txt, encoding="utf-8")
     (out_dir / "members.json").write_text(json.dumps({n: m for n, m in members.items() if m["kind"] != "lgbm"}), encoding="utf-8")
-    (out_dir / "isotonic.json").write_text(json.dumps(dict(x=iso.X_thresholds_.tolist(), y=iso.y_thresholds_.tolist())), encoding="utf-8")
+    if iso is not None:
+        (out_dir / "isotonic.json").write_text(json.dumps(dict(x=iso.X_thresholds_.tolist(), y=iso.y_thresholds_.tolist())), encoding="utf-8")
+    else:
+        (out_dir / "isotonic.json").unlink(missing_ok=True)
     feats = sorted({c for m in members.values() for c in m["features"]})
     manifest = dict(kind="cycle_classifier", format=FORMAT, created=time.strftime("%Y-%m-%d %H:%M:%S"), features=feats,
                     members={n: dict(kind=m["kind"], features=m["features"], **({"file": m["file"]} if "file" in m else {})) for n, m in members.items()},
-                    calibrated=True, n=int(len(y)), n_pos=int(y.sum()), n_groups=int(len(set(groups))),
+                    calibrated=bool(calibrate), n=int(len(y)), n_pos=int(y.sum()), n_groups=int(len(set(groups))),
                     cv=dict(n_splits=n_splits, repeats=repeats, auc_members={n: round(_auc(y, oof[n]), 4) for n in spec}, auc_ensemble=round(_auc(y, ens), 4),
-                            auc_ensemble_calibrated=round(_auc(y, iso.predict(ens)), 4)),
+                            auc_ensemble_calibrated=round(_auc(y, iso.predict(ens)), 4) if iso is not None else None),
                     **(meta or {}))
     (out_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     pd.DataFrame({"y": y, "group": groups, **{f"oof_{n}": v for n, v in oof.items()}, "oof_ensemble": ens}).to_csv(out_dir / "oof.csv", index=False)

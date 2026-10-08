@@ -47,7 +47,7 @@ class ObjectDetector:
 
     def detect(self, crop: np.ndarray) -> list[dict]:
         ev = self.cfg["evidence"]
-        r = self.model.predict(crop, imgsz=ev["imgsz"], conf=ev["conf"], verbose=False, device="cpu")[0]
+        r = self.model.predict(crop, imgsz=ev["imgsz"], conf=ev["conf"], verbose=False, device=str(ev.get("device", "cpu")))[0]
         out = []
         if r.boxes is not None and len(r.boxes):
             for b, c, k in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.conf.cpu().numpy(), r.boxes.cls.cpu().numpy()):

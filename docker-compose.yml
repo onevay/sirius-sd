@@ -9,7 +9,7 @@
 name: smoking-detection
 
 x-sd-common: &sd-common
-  image: smoking-detection:cpu
+  image: onevay/smoking-detection:gpu
   build:
     context: .
     args:
@@ -19,21 +19,23 @@ x-sd-common: &sd-common
     SD_THREADS: ${SD_THREADS:-2}
     HF_HUB_DISABLE_TELEMETRY: "1"
   volumes:
-    - ./data:/app/data:ro                       # ваши записи — только чтение
-    - ./data_external:/app/data_external        # открытые датасеты
-    - ./models:/app/models                      # веса и пакеты моделей
-    - ./outputs:/app/outputs                    # результаты, кэши позы, прогоны распознавания
-    - ./labels:/app/labels                      # разметка (события и циклы)
-    - ./streams:/app/streams                    # имитация камер: папки <район>-<индекс>-<время начала>
-    - ./docs/review:/app/docs/review            # метки ассистента/жестов (CSV)
+    - ./data:/app/data:ro # ваши записи — только чтение
+    - ./data_external:/app/data_external # открытые датасеты
+    - ./models:/app/models # веса и пакеты моделей
+    - ./outputs:/app/outputs # результаты, кэши позы, прогоны распознавания
+    - ./labels:/app/labels # ручные метки циклов
+    - ./streams:/app/streams # имитация камер: папки <район>-<индекс>-<время начала>
+    - ./docs/review:/app/docs/review # метки ассистента/жестов (CSV)
+    - ./configs/experiments:/app/configs/experiments # профили моделей (создаются и правятся в вебе)
+    - ./configs/classifiers:/app/configs/classifiers # спецификации классификатора (страница «Классификатор»)
   # ограничьте память под слабый ПК, чтобы контейнер не вытеснил систему в своп: mem_limit: 5g
 
 services:
   ui:
     <<: *sd-common
-    command: ["ui", "--host", "0.0.0.0", "--port", "8501"]
+    command: [ "ui", "--host", "0.0.0.0", "--port", "8501" ]
     ports:
-      - "127.0.0.1:8501:8501"                   # не 0.0.0.0: интерфейс не должен быть виден из сети
+      - "127.0.0.1:8501:8501" # не 0.0.0.0: интерфейс не должен быть виден из сети
 
   app:                                          # интерфейс оператора (мониторинг): http://127.0.0.1:8502
     <<: *sd-common
@@ -48,16 +50,16 @@ services:
 
   cli:
     <<: *sd-common
-    profiles: ["tools"]
+    profiles: [ "tools" ]
     # запуск: docker compose run --rm cli <команда sd>
-    command: ["--help"]
+    command: [ "--help" ]
 
   ollama:
-    profiles: ["vlm"]
-    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}   # зафиксируйте версию тегом (на ноутбуке проверялась 0.40.0)
+    profiles: [ "vlm" ]
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest} # зафиксируйте версию тегом (на ноутбуке проверялась 0.40.0)
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
-      OLLAMA_NO_CLOUD: "1"                       # облачные модели и функции выключены: кадры никуда не уходят
+      OLLAMA_NO_CLOUD: "1" # облачные модели и функции выключены: кадры никуда не уходят
       OLLAMA_KEEP_ALIVE: 30m
       OLLAMA_MAX_LOADED_MODELS: "1"
       OLLAMA_NUM_PARALLEL: "1"
@@ -65,7 +67,7 @@ services:
     volumes:
       - ollama_models:/root/.ollama
     expose:
-      - "11434"                                  # только внутри сети compose
+      - "11434" # только внутри сети compose
     # GPU NVIDIA (по желанию): deploy.resources.reservations.devices: [{driver: nvidia, count: all, capabilities: [gpu]}]
 
 volumes:

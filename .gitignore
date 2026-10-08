@@ -14,3 +14,16 @@ labels/*.csv
 !labels/README.md
 .env
 .requirements.install.txt
+
+# открытые наборы данных (лицензии разные: HMDB51 и Stanford40 — исследовательские, не распространять) — качаются командами `sd photos fetch`, `sd fetch-videos`
+data_external/
+
+# кадры из записей площадки в иллюстрациях документов: перед публикацией репозитория убрать или заменить (см. README, «Перед публикацией репозитория»)
+docs/img/pose_sm6_t12.jpg
+docs/img/cycles_night_ir_1.jpg
+docs/img/cycles_group_canopy.jpg
+docs/img/vlm_crops_mouth_vs_tube.jpg
+
+# копии видео для просмотра (создаются автоматически)
+src/sd/ui/static/media/*
+!src/sd/ui/static/media/README.txt

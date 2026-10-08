@@ -10,7 +10,8 @@ from sd import gt as GT
 from sd import library as LIB
 from sd import viewdata as VD
 from sd.paths import OUTPUTS
-from sd.ui.labeler import labeler, video_data_uri
+from sd.ui.labeler import labeler
+from sd.ui.media import media_src
 
 
 @st.cache_data(show_spinner=False)
@@ -86,7 +87,7 @@ def render() -> None:
     info = _probe(str(video), video.stat().st_mtime)
     with st.spinner("готовим копию видео для просмотра…"):
         prox = _proxy(video)
-    uri, warn = video_data_uri(prox)
+    uri, warn = media_src(prox)
     if warn:
         st.warning(warn)
     runs = VD.find_pose_runs(cid)

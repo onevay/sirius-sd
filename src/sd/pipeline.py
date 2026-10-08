@@ -160,12 +160,29 @@ def recognize(video: str | Path, start: float, end: float | None, cfg: dict, opt
         tick("feat_kinematics_pose", t0)
         if opts.objects:
             t0 = time.perf_counter()
-            pd.DataFrame(A.evidence_rows(cycles, tr, ser, cfg, list(opts.objects))).to_parquet(an / "evidence_cycles.parquet", index=False)
+            from . import enrich as EN
+
+            ed = EN.clip_dir(vname)
+            ev_rows = EN.cached_evidence(cycles, cfg, opts.objects, ed)           # те же циклы, параметры и веса → из кэша `outputs/enrich` (минуты → секунды)
+            if ev_rows is None:
+                ev_rows = pd.DataFrame(A.evidence_rows(cycles, tr, ser, cfg, list(opts.objects)))
+                EN.save_evidence(ev_rows, cfg, opts.objects, ed)
+            else:
+                timing["feat_object_cached"] = 1.0
+            ev_rows.to_parquet(an / "evidence_cycles.parquet", index=False)
             tick("feat_object", t0)
         if opts.photo_bundle:
             t0 = time.perf_counter()
-            A.photo_all(cycles, _abs(opts.photo_bundle), opts.backend, out=an / "photo_cycles.parquet", ctx=ctx,
-                        progress=(lambda tag, i, n: progress(f"фото-модель · {tag}", i, n)) if progress else None)
+            from . import enrich as EN
+
+            pd_, pb = EN.clip_dir(vname), _abs(opts.photo_bundle)
+            ph = EN.cached_photo(cycles, pb, pd_)                                   # те же циклы и тот же пакет → из кэша `outputs/enrich`
+            if ph is not None:
+                ph.to_parquet(an / "photo_cycles.parquet", index=False)
+                timing["feat_photo_cached"] = 1.0
+            else:
+                A.photo_all(cycles, pb, opts.backend, out=an / "photo_cycles.parquet", ctx=ctx,
+                            progress=(lambda tag, i, n: progress(f"фото-модель · {tag}", i, n)) if progress else None)
             tick("feat_photo", t0)
         tab = _with_end(FA.all_cycles_features(an=an, vlm=None, dataset=an / "dataset_cycles.parquet"))
         # ---- 3. оценка цикла: дешёвый пакет

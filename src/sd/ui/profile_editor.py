@@ -3,13 +3,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from sd import catalog as CAT
 from sd.profiles import DEFAULT_OPTIONS, Profile
 
 NONE = "— нет —"
-IMGSZ = [480, 640, 800, 960, 1088, 1280]
+IMGSZ = [480, 640, 800, 960, 1088, 1280, 1600, 1920]
 
 
 def _pick(label: str, options: list[str], current: str | None, key: str, fmt=None, help: str | None = None) -> str:
@@ -17,6 +18,57 @@ def _pick(label: str, options: list[str], current: str | None, key: str, fmt=Non
     if current is not None and current not in opts:
         opts.append(current)
     return st.selectbox(label, opts, index=opts.index(current) if current in opts else 0, key=key, format_func=fmt or str, help=help)
+
+
+def _flatten(d: dict, prefix: str = "") -> dict:
+    out = {}
+    for k_, v in d.items():
+        kk = f"{prefix}{k_}"
+        if isinstance(v, dict):
+            out.update(_flatten(v, kk + "."))
+        elif isinstance(v, (bool, int, float, str)) or v is None:
+            out[kk] = v
+    return out
+
+
+def _parse(txt: str, like):
+    """Строка из таблицы → значение того же типа, что и у образца (bool/int/float/str)."""
+    t = str(txt).strip()
+    if isinstance(like, bool):
+        if t.lower() in ("true", "1", "да", "yes"):
+            return True
+        if t.lower() in ("false", "0", "нет", "no"):
+            return False
+        raise ValueError(f"ожидалось true/false, получено {t!r}")
+    if isinstance(like, int):
+        return int(float(t))
+    if isinstance(like, float):
+        return float(t)
+    return t
+
+
+def _all_params(base: Profile, conf: dict, k: str) -> dict:
+    """Таблица ВСЕХ скалярных параметров конфигурации (configs/default.yaml): любое значение можно изменить; изменённые уходят в профиль как переопределения."""
+    from sd.config import load_config
+
+    default = _flatten(load_config(None).to_dict())
+    cur = _flatten(base.cfg().to_dict())
+    cur.update({a: b for a, b in conf.items() if a in default})          # то, что уже выбрано выше в этом же редакторе
+    over: dict = {}
+    with st.expander("Все параметры конфигурации (поза, трекинг, признаки, автомат, предмет, трубка, VLM, отрисовка …)"):
+        q = st.text_input("Фильтр по имени", "", key=k + "pfilter", placeholder="например cycles. или evidence.")
+        rows = [dict(параметр=a, значение="" if v is None else str(v), по_умолчанию="" if default[a] is None else str(default[a])) for a, v in cur.items() if q.lower() in a.lower()]
+        st.caption("Редактируйте колонку «значение»; отличие от «по умолчанию» сохранится в профиле. Неверный тип значения отклоняется.")
+        ed = st.data_editor(pd.DataFrame(rows), hide_index=True, use_container_width=True, disabled=["параметр", "по_умолчанию"], key=k + "ptable", height=360)
+        for _, r in ed.iterrows():
+            a = r["параметр"]
+            if str(r["значение"]) == ("" if cur[a] is None else str(cur[a])):
+                continue
+            try:
+                over[a] = _parse(r["значение"], default[a] if default[a] is not None else cur[a])
+            except ValueError as e:
+                st.error(f"{a}: {e}")
+    return {a: b for a, b in over.items() if b != cur.get(a)}
 
 
 def editor(base: Profile, key: str = "pe") -> Profile:
@@ -74,5 +126,6 @@ def editor(base: Profile, key: str = "pe") -> Profile:
         win = b.slider("Окно «два цикла», с", 10.0, 40.0, float(cfg["events"]["window_sec"]), 1.0, key=k + "win")
         conf.update({"cycles.th_in": float(th_in), "cycles.th_out": float(max(th_out, th_in + 0.05)), "cycles.hold_min_sec": float(hold[0]), "cycles.hold_max_sec": float(hold[1]),
                      "events.cycle_th": float(cth), "events.merge_gap_sec": float(gap), "events.window_sec": float(win)})
+    conf.update(_all_params(base, conf, k))
     clean = {k_: v for k_, v in opt.items() if DEFAULT_OPTIONS.get(k_) != v or k_ in base.options}
     return Profile(name=base.name, description=base.description, base=base.base, config=conf, options=clean)

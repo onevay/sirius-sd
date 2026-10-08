@@ -63,6 +63,8 @@ def run_clips(root: Path, cfg: dict, per_class: int | None = None, max_sec: floa
             df, _ = stages.stage_events(tr, ser, cyc, cfg, rd, "cam_local", vp.stem)
             s = tr.summary(min_h)
             ok = s[~s.ignore_small]
+            main = ser[ser.tid == ser.groupby("tid").size().idxmax()] if len(ser) else ser    # самый длинный трек клипа
+            reach = dict(d_min_track=float(main.d.min()) if len(main) else np.nan, wrist_conf=float(main.wrist_conf.mean()) if len(main) else np.nan)
             cyc_ok = cyc[cyc.tid.isin(ok.tid)]
             tab = build_cycle_table(vp, tr, ser, cyc)
             n_rules = len(df)
@@ -74,7 +76,7 @@ def run_clips(root: Path, cfg: dict, per_class: int | None = None, max_sec: floa
                 tab = tab.assign(score=sc)
             row.update(video_sec=round(dur, 1), window_sec=round(min(max_sec, dur - start), 1), tracks=len(s), tracks_ge80=len(ok), h_med=float(ok.h_med.median()) if len(ok) else np.nan,
                        person_min=float(ok.dur.sum() / 60.0), cycles=len(cyc_ok), events=len(df), events_rules=n_rules,
-                       ev_conf_max=float(df.confidence.max()) if len(df) else np.nan, wall_s=round(time.perf_counter() - t0, 1))
+                       ev_conf_max=float(df.confidence.max()) if len(df) else np.nan, wall_s=round(time.perf_counter() - t0, 1), **reach)
             if len(tab):
                 tab = tab[tab.tid.isin(ok.tid)]
                 tables.append(tab.assign(source=tag or root.name, cls=vp.parent.name))
@@ -93,8 +95,9 @@ def run_clips(root: Path, cfg: dict, per_class: int | None = None, max_sec: floa
     return df, cyc_df
 
 
-def summarize(df: pd.DataFrame) -> pd.DataFrame:
-    """По классам: клипов, ошибок, доля с циклом, доля с событием, циклов в минуту на человека (медиана и по сумме), медианный рост человека."""
+def summarize(df: pd.DataFrame, th_in: float = 0.65) -> pd.DataFrame:
+    """По классам: клипов, ошибок, доля с циклом, доля с событием, циклов в минуту на человека (медиана и по сумме), медианный рост человека;
+    если в таблице есть диагностика позы — доля клипов, где запястье подходит ко рту ближе `th_in` (порог входа автомата; иначе цикла быть не может), и медианная достоверность запястий."""
     d = df.copy()
     if "error" not in d:
         d["error"] = np.nan
@@ -103,6 +106,9 @@ def summarize(df: pd.DataFrame) -> pd.DataFrame:
                with_cycle=("cycles", lambda x: float((x > 0).mean())), with_event=("events", lambda x: float((x > 0).mean())), h_med_px=("h_med", "median"))
     if "events_rules" in ok:   # прогон с классификатором: доля клипов с событием по правилу длительности паузы — для сравнения
         agg["with_event_rules"] = ("events_rules", lambda x: float((x > 0).mean()))
+    if "d_min_track" in ok:   # диагностика позы: почему нет циклов — рука не достаёт до рта в оценке позы или автомат отверг жест
+        agg["reach_th_in"] = ("d_min_track", lambda x: float((x < th_in).mean()))
+        agg["wrist_conf_med"] = ("wrist_conf", "median")
     out = ok.groupby(["cls", "label"]).agg(**agg)
     out["cycles_per_person_min"] = out.cycles_sum / out.person_min.clip(lower=1e-9)
     out = out.drop(columns=["cycles_sum", "person_min"])
