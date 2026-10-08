@@ -204,3 +204,45 @@ def test_real_job_reports_missing_models_as_error(web):
     finally:
         profmod.load = orig
     assert j["state"] == "error" and j["error"]
+
+
+def test_live_analysis_streams_frames_and_alerts(web, monkeypatch):
+    """Анализ «в реальном времени»: кадры и тревоги приходят по мере обработки, в конце результат сохраняется."""
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from rt_helpers import make_pose_fn
+    from sd import profiles as PR
+    from sd.config import load_config
+    from sd.realtime import replay as RP
+    from sd.realtime.engine import StreamEngine
+    from sd.realtime.sources import Pacer
+
+    app, base = web
+    long_video = app.roots["data"] / "курение" / "long.mp4"
+    make_video(long_video, n=300, fps=10)
+    vid = app.fid(long_video)
+    cfg = ["cycles.th_in=0.35", "cycles.th_out=0.55", "events.confidence_threshold=0.5"]
+    prof = PR.Profile("t", config={"cycles.th_in": 0.35, "cycles.th_out": 0.55, "events.confidence_threshold": 0.5}, options={"allow_heuristic": True})
+    app.profiles = lambda: [dict(name="t", kind="profile", ready=True, problems=[], describe={})]
+    app.load_profile = lambda name: prof
+    app.engine_factory = lambda p, cid, fps: StreamEngine(load_config(overrides=cfg), cid, make_pose_fn([(5.0, 2.0, 1.5, 1.5), (16.0, 2.0, 1.5, 1.5)]), keep_frames=False)
+    monkeypatch.setattr(RP, "Pacer", lambda speed: Pacer(speed * 60))          # «реальное время» ×60, чтобы тест шёл секунды
+    s, j = post(base + "/api/analyze", {"video": vid, "profile": "t", "live": True})
+    assert s == 202 and j["live"] is True
+    since, got, seen_partial = 0, 0, False
+    for _ in range(400):
+        r = jget(f"{base}/api/job/{j['id']}/stream?since={since}")[1]
+        since, got = r["next"], got + len(r["frames"])
+        if r["state"] == "running" and 0 < got < 290:
+            seen_partial = True
+        if r["state"] in ("done", "error"):
+            break
+        time.sleep(0.05)
+    assert r["state"] == "done", r.get("error")
+    assert got == 300 and r["frame_hw"] == [96, 160] and r["horizon"] >= 29 and len(r["alerts"]) == 1
+    a = r["alerts"][0]
+    assert a["t_open"] > a["end"] and a["tid"] == 1 and 0 < a["confidence"] <= 1 and a["delay"] > 0
+    assert seen_partial, "кадры должны приходить по мере обработки, а не одним куском"
+    saved = jget(f"{base}/api/analysis?video={vid}")[1]
+    assert len(saved["trace"]["frames"]) == 300 and saved["meta"]["n_alerts"] == 1

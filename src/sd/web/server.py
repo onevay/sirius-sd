@@ -134,6 +134,8 @@ def make_handler(app: WebApp):
                 return self._send(200, ("﻿" + app.journal_csv()).encode("utf-8"), "text/csv; charset=utf-8", {"Content-Disposition": "attachment; filename=decisions.csv"})
             if p == "/api/jobs":
                 return self._json(app.jobs_list())
+            if m := re.fullmatch(r"/api/job/(\w+)/stream", p):
+                return self._json(app.stream(m.group(1), int(q.get("since", 0))))
             if m := re.fullmatch(r"/api/job/(\w+)", p):
                 return self._json(app.job(m.group(1)).to_dict())
             if p == "/api/analysis":
@@ -165,7 +167,7 @@ def make_handler(app: WebApp):
                 if p == "/api/analyze":
                     if body.get("folder"):
                         return self._json([j.to_dict() for j in app.submit_folder(body["folder"], body["profile"])], 202)
-                    return self._json(app.submit(body["video"], body["profile"]).to_dict(), 202)
+                    return self._json(app.submit(body["video"], body["profile"], bool(body.get("live"))).to_dict(), 202)
                 if p == "/api/demo":
                     return self._json(dict(n=app.demo(bool(body.get("clear")))))
                 raise NotFound(p)

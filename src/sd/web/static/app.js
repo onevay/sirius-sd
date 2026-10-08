@@ -157,7 +157,7 @@ async function vMulti(q) {
     if (!c.chunks.length) return;
     const v = $("video", t), sel = $("select", t), note = $("[data-st]", t); vids.push(v);
     const load = async (i, t0 = 0, play = false) => {
-      const ch = c.chunks[i]; sel.value = i; $("[data-an]", t).href = `#/analysis?vid=${ch.id}`;
+      const ch = c.chunks[i]; sel.value = i; $("[data-an]", t).href = `#/analysis?vid=${ch.id}&auto=1`;
       const off = c.chunks.slice(0, i).reduce((s, x) => s + (x.duration || 0), 0), dur = ch.duration || 1;
       const al = await J(`/api/alerts?camera=${encodeURIComponent(c.camera_id)}&limit=200`);
       const upd = timeline($(".timeline", t), dur, al.filter(a => a.start_sec >= off && a.start_sec <= off + dur).map(a => ({ cls: "alert", a: a.start_sec - off, b: Math.max(a.end_sec, a.start_sec + 1) - off, tip: `${a.explain} ${Math.round(a.confidence * 100)}%` })), s => { v.currentTime = s; });
@@ -228,13 +228,15 @@ async function vAnalysis(q) {
       <div id="vlist" class="vlist"></div>
       <select id="prof">${profiles.map(p => `<option value="${esc(p.name)}">${p.ready ? "" : "⚠ "}${esc(p.name)}${p.kind === "solver" ? " · решатель" : ""}</option>`).join("") || "<option value=''>нет профилей</option>"}</select>
       <div id="pinfo" class="mut small"></div>
-      <button class="primary" id="run">Анализировать</button><button id="runAll">Всю папку</button><div class="prog hidden" id="prog"><i></i></div><div id="jstat" class="mut small"></div></aside>
+      <label class="row small" style="gap:6px"><input type="checkbox" id="live" checked> В реальном времени: видео идёт вместе с моделью, рамки и тревоги сразу</label>
+      <button class="primary" id="run">▶ Смотреть с анализом</button><button id="runAll" title="Быстрый анализ всех видео папки без просмотра">Всю папку (быстро)</button><div class="prog hidden" id="prog"><i></i></div><div id="jstat" class="mut small"></div></aside>
     <section><div class="card"><div class="vwrap" id="pw"><video id="pv" controls muted playsinline></video><canvas id="ov"></canvas></div><div class="timeline" id="tl"></div>
       <div class="toolbar"><button id="prevA" title="[">◀ тревога</button><button id="nextA" title="]">тревога ▶</button>
         <select id="rate"><option value="0.5">×0.5</option><option value="1" selected>×1</option><option value="2">×2</option><option value="4">×4</option></select>
         <label><input type="checkbox" id="tBox" checked> рамки</label><label><input type="checkbox" id="tGt" checked> разметка</label><span class="grow mut small" id="pst"></span></div></div>
       <div class="card pad hidden" id="res" style="margin-top:12px"></div><div class="card pad hidden" id="batch" style="margin-top:12px"></div></section></div>`;
-  let cur = null, trace = null, meta = null, dur = 1, upd = () => { }, vs = [];
+  let cur = null, trace = null, meta = null, dur = 1, upd = () => { }, vs = [], liveJob = null;
+  S.cleanup.push(() => { liveJob = null; });
   const pv = $("#pv"), note = $("#pst");
   // профиль: ранее выбранный, иначе первый готовый
   const pick0 = profiles.find(p => p.name === remembered && p.ready) || ready[0] || profiles[0]; if (pick0) $("#prof").value = pick0.name;
@@ -249,15 +251,15 @@ async function vAnalysis(q) {
     $("#vlist").querySelectorAll(".camrow").forEach(r => r.onclick = () => select(vs.find(v => v.id === r.dataset.id)));
   };
   const select = async v => {
-    cur = v; trace = null; meta = null; $("#res").classList.add("hidden"); $("#jstat").textContent = ""; dur = v.duration || 1; history.replaceState(null, "", `#/analysis?vid=${v.id}`);
+    liveJob = null; cur = v; trace = null; meta = null; $("#res").classList.add("hidden"); $("#jstat").textContent = ""; dur = v.duration || 1; history.replaceState(null, "", `#/analysis?vid=${v.id}`);
     $("#vlist").querySelectorAll(".camrow").forEach(r => r.classList.toggle("sel", r.dataset.id === v.id));
     upd = timeline($("#tl"), dur, [], s => { pv.currentTime = s; }); note.textContent = ""; pinfo();
     pv.dataset.retried = ""; await loadVideo(pv, v.id, note);
     const a = await J("/api/analysis?video=" + v.id); if (a.trace) setAnalysis(a.trace, a.meta); else note.textContent = note.textContent || "Разбора ещё нет — нажмите «Анализировать».";
   };
+  const drawTimeline = t => { upd = timeline($("#tl"), dur, [...(t.gt || []).map(g => ({ cls: "gt", a: g.start, b: g.end, tip: "разметка: курение" })), ...(t.alerts || []).map(a => ({ cls: "alert", a: a.start, b: Math.max(a.end, a.start + 1), tip: `${a.explain} ${Math.round(a.confidence * 100)}%` }))], s => { pv.currentTime = s; }); };
   const setAnalysis = (t, m) => {
-    trace = t; meta = m;
-    upd = timeline($("#tl"), dur, [...(t.gt || []).map(g => ({ cls: "gt", a: g.start, b: g.end, tip: "разметка: курение" })), ...(t.alerts || []).map(a => ({ cls: "alert", a: a.start, b: Math.max(a.end, a.start + 1), tip: `${a.explain} ${Math.round(a.confidence * 100)}%` }))], s => { pv.currentTime = s; });
+    trace = t; meta = m; drawTimeline(t);
     const s = (m && m.stats) || {}, mt = (m && m.metrics) || null, al = t.alerts || [];
     note.textContent = `профиль ${m ? m.profile : "—"}`;
     const kp = [["Тревог", al.length], ["Скорость", s.rt_factor != null ? `×${s.rt_factor}` : "—"], ...(mt ? [["F1", mt.f1.toFixed(2)], ["TP / FP / FN", `${mt.tp}/${mt.fp}/${mt.fn}`], ["Задержка", mt.alert_delay_median == null ? "—" : mt.alert_delay_median.toFixed(1) + " с"]] : [])];
@@ -279,6 +281,12 @@ async function vAnalysis(q) {
   const paint = () => {
     const w = pv.clientWidth, h = pv.clientHeight; if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
     const g = cv.getContext("2d"); g.clearRect(0, 0, w, h); upd(pv.currentTime);
+    if (liveJob && liveJob.started) {        // видео не убегает от модели: ждём, пока она посчитает до текущей секунды
+      const lag = pv.currentTime - liveJob.horizon;
+      if (!pv.paused && lag > 0.25) { pv.pause(); liveJob.waiting = true; }
+      else if (liveJob.waiting && liveJob.horizon > pv.currentTime + 1.0) { liveJob.waiting = false; pv.play().catch(() => { }); }
+      if (liveJob.waiting) { g.fillStyle = "rgba(0,0,0,.6)"; g.fillRect(0, h / 2 - 16, w, 32); g.fillStyle = "#fff"; g.font = "14px system-ui"; g.fillText(`Модель отстаёт на ${Math.max(0, lag).toFixed(1)} с — ждём…`, 12, h / 2 + 5); }
+    }
     if (!trace || !trace.frames.length) return;
     const t = pv.currentTime, live = (trace.alerts || []).filter(a => t >= a.start && t <= a.end + 1);
     if (live.some(a => t >= a.t_open - 1e-3)) { g.fillStyle = "rgba(217,45,32,.92)"; g.fillRect(0, 0, w, 26); g.fillStyle = "#fff"; g.font = "bold 14px system-ui"; g.fillText("ТРЕВОГА: курение", 10, 18); }
@@ -301,7 +309,30 @@ async function vAnalysis(q) {
   const bar = (p) => { $("#prog").classList.remove("hidden"); $("#prog i").style.width = Math.round(p * 100) + "%"; };
   const waitJob = async j => { while (j.state === "queued" || j.state === "running") { await new Promise(r => setTimeout(r, 800)); j = await J("/api/job/" + j.id); if (!document.body.contains(pv)) return null;
     bar(j.progress); $("#jstat").textContent = `${j.state === "queued" ? "в очереди" : "анализ"}: ${Math.round(j.progress * 100)}% · тревог ${j.alerts.length}`; } return j; };
+  const runLive = async () => {
+    $("#run").disabled = $("#runAll").disabled = true; $("#res").classList.add("hidden"); pv.pause(); pv.currentTime = 0; note.textContent = "анализ в реальном времени"; $("#jstat").textContent = "Модель загружается…"; bar(0);
+    let j; try { j = await POST("/api/analyze", { video: cur.id, profile: $("#prof").value, live: true }); } catch (e) { $("#jstat").innerHTML = `<span class="err">${esc(e.message)}</span>`; $("#prog").classList.add("hidden"); pinfo(); return; }
+    trace = { frames: [], alerts: [], gt: [], fps: 10, frame_hw: null }; drawTimeline(trace);
+    const me = liveJob = { id: j.id, since: 0, horizon: 0, started: false, waiting: false }; let tick = 0;
+    while (liveJob === me && document.body.contains(pv)) {
+      let r; try { r = await J(`/api/job/${me.id}/stream?since=${me.since}`); } catch (e) { $("#jstat").innerHTML = `<span class="err">${esc(e.message)}</span>`; break; }
+      if (liveJob !== me) return;
+      trace.frames.push(...r.frames); me.since = r.next; me.horizon = r.horizon; trace.fps = r.fps; trace.gt = r.gt; if (r.frame_hw) trace.frame_hw = r.frame_hw;
+      if (r.alerts.length !== trace.alerts.length) { trace.alerts = r.alerts; drawTimeline(trace); } else trace.alerts = r.alerts;
+      bar(r.progress); $("#jstat").textContent = r.state === "queued" ? "в очереди" : (me.started ? `идёт анализ · тревог ${r.alerts.length}` : "модель загружается…");
+      if (!me.started && r.frames.length && r.horizon > 0.5) { me.started = true; $("#rate").value = "1"; pv.playbackRate = 1; pv.play().catch(() => { }); }
+      if (r.state === "error") { $("#jstat").innerHTML = `<span class="err">Ошибка: ${esc(r.error)}</span>`; liveJob = null; break; }
+      if (r.state === "done") { liveJob = null; $("#jstat").textContent = "Готово"; const a = await J(`/api/analysis?video=${cur.id}&profile=${encodeURIComponent($("#prof").value)}`);
+        if (a.trace) { const t0 = pv.currentTime, was = !pv.paused; setAnalysis(a.trace, a.meta); pv.currentTime = t0; if (was) pv.play().catch(() => { }); } loadList(); break; }
+      await new Promise(r2 => setTimeout(r2, 300)); tick++;
+    }
+    $("#prog").classList.add("hidden"); pinfo();
+  };
+  $("#live").checked = mem.get("an_live") !== "0";
+  $("#live").onchange = () => { mem.set("an_live", $("#live").checked ? "1" : "0"); $("#run").textContent = $("#live").checked ? "▶ Смотреть с анализом" : "Анализировать"; };
+  $("#run").textContent = $("#live").checked ? "▶ Смотреть с анализом" : "Анализировать";
   $("#run").onclick = async () => {
+    if ($("#live").checked) return runLive();
     $("#run").disabled = $("#runAll").disabled = true; $("#jstat").textContent = "Модель запускается…"; bar(0);
     try { const j = await waitJob(await POST("/api/analyze", { video: cur.id, profile: $("#prof").value })); if (!j) return;
       if (j.state === "error") $("#jstat").innerHTML = `<span class="err">Ошибка: ${esc(j.error)}</span>`;
@@ -326,5 +357,6 @@ async function vAnalysis(q) {
   $("#folder").onchange = async () => { cur = null; await loadList(); if (vs[0]) select(vs[0]); };
   await loadList(); pinfo();
   const v0 = (q.vid && vs.find(v => v.id === q.vid)) || vs[0]; if (v0) await select(v0);
+  if (q.auto && cur && !trace && !$("#run").disabled) { history.replaceState(null, "", `#/analysis?vid=${cur.id}`); $("#run").click(); }
 }
 route();

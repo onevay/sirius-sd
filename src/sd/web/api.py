@@ -25,17 +25,24 @@ class NotFound(KeyError):
 
 
 class Job:
-    def __init__(self, video: str, profile: str, name: str):
-        self.id, self.video, self.profile, self.name = uuid.uuid4().hex[:10], video, profile, name
+    def __init__(self, video: str, profile: str, name: str, live: bool = False):
+        self.id, self.video, self.profile, self.name, self.live = uuid.uuid4().hex[:10], video, profile, name, live
         self.state, self.progress, self.error = "queued", 0.0, None
         self.alerts: list[dict] = []
+        self.frames: list = []                 # живой режим: кадры [t, [[tid, x1, y1, x2, y2]]] по мере обработки
+        self.frame_hw: list | None = None
+        self.fps: float = 10.0
+        self.gt: list[dict] = []
+        self.horizon = 0.0                     # до какой секунды видео модель уже посчитала
+        self._alert_map: dict[str, dict] = {}
+        self.lock = threading.Lock()
         self.stats: dict | None = None
         self.metrics: dict | None = None
         self.notes: list[str] = []
         self.created = time.time()
 
     def to_dict(self) -> dict:
-        return dict(id=self.id, video=self.video, profile=self.profile, name=self.name, state=self.state, progress=round(self.progress, 3), error=self.error, alerts=self.alerts,
+        return dict(id=self.id, video=self.video, profile=self.profile, name=self.name, live=self.live, state=self.state, progress=round(self.progress, 3), error=self.error, alerts=self.alerts,
                     stats=self.stats, metrics=self.metrics, notes=self.notes)
 
 
@@ -262,11 +269,11 @@ class WebApp:
     def jobs_list(self, limit: int = 50) -> list[dict]:
         return [{k: v for k, v in j.to_dict().items() if k != "alerts"} | dict(n_alerts=len(j.alerts)) for j in sorted(self.jobs.values(), key=lambda j: -j.created)[:limit]]
 
-    def submit(self, vid: str, profile: str) -> Job:
+    def submit(self, vid: str, profile: str, live: bool = False) -> Job:
         path = self.resolve(vid)
         if profile not in {p["name"] for p in self.profiles()}:
             raise NotFound(f"профиль {profile}")
-        j = Job(vid, profile, path.name)
+        j = Job(vid, profile, path.name, live)
         self.jobs[j.id] = j
         self._q.put(j)
         if not self._worker or not self._worker.is_alive():
@@ -282,37 +289,74 @@ class WebApp:
                 return
             self.run_job(j)
 
+    def load_profile(self, name: str):
+        from .. import profiles as PR
+        from .. import solver as SV
+
+        insts = {s["name"] for s in SV.installed_solvers()}
+        return SV.resolve_profile(name) if name in insts and name not in PR.list_profiles() else PR.load(name)
+
+    engine_factory = None        # тесты и встраивание: (профиль, clip_id, fps) -> StreamEngine вместо реальных моделей
+
     def _run_job(self, j: Job) -> None:
         from .. import gt as GT
-        from .. import profiles as PR
-        from .. import runner as RN
         from .. import solver as SV
         from ..realtime import replay as RP
 
         j.state = "running"
         try:
             path = self.resolve(j.video)
-            insts = {s["name"] for s in SV.installed_solvers()}
-            prof = SV.resolve_profile(j.profile) if j.profile in insts and j.profile not in PR.list_profiles() else PR.load(j.profile)
-            errs = SV.errors(prof, "replay", devices=True)
-            if errs:
-                raise RuntimeError("; ".join(e.text for e in errs))
+            prof = self.load_profile(j.profile)
+            if self.engine_factory is None:
+                errs = SV.errors(prof, "replay", devices=True)
+                if errs:
+                    raise RuntimeError("; ".join(e.text for e in errs))
             dur = float(self.info(path).get("duration") or 0.0)
+            gt_df = GT.load()
+            cid = P.video_id(path)
+            sub = gt_df[(gt_df["clip_id"] == cid) & (gt_df["label"] == "POSITIVE")] if len(gt_df) else gt_df
+            j.gt = [dict(start=float(r.start_sec), end=float(r.end_sec)) for r in sub.itertuples()]
+            fps = float(prof.cfg()["video"]["process_fps"])
+            j.fps = fps
 
             def on_alert(u) -> None:
-                if u.kind == "open":
-                    j.alerts.append(dict(t_now=round(u.t_now, 2), start=round(u.start, 2), tid=u.tid, confidence=round(u.confidence, 3), explain=u.explain))
+                a = dict(key=u.key, tid=int(u.tid), start=round(float(u.start), 2), end=round(float(u.end), 2), confidence=round(float(u.confidence), 3), explain=u.explain)
+                with j.lock:
+                    old = j._alert_map.get(u.key)
+                    a["t_open"] = old["t_open"] if old else round(float(u.t_now), 2)
+                    a["delay"] = round(a["t_open"] - a["start"], 2)
+                    if u.kind != "close" or old:
+                        j._alert_map[u.key] = a
+                    j.alerts = list(j._alert_map.values())
 
-            res = RP.replay_video(path, prof, speed=0.0, gt=GT.load(), render=False, on_alert=on_alert, save=False,
+            def on_frame(row, hw) -> None:
+                with j.lock:
+                    j.frames.append(row)
+                    j.horizon = row[0]
+                    if hw and not j.frame_hw:
+                        j.frame_hw = list(hw)
+
+            eng = self.engine_factory(prof, cid, fps) if self.engine_factory else None
+            res = RP.replay_video(path, prof, speed=1.0 if j.live else 0.0, gt=gt_df, render=False, on_alert=on_alert, on_frame=on_frame, save=False, engine=eng,
                                   progress=lambda t, e: setattr(j, "progress", min(0.99, t / dur if dur else 0.0)))
             d = self._result_dir(j.video, j.profile)
             d.mkdir(parents=True, exist_ok=True)
             (d / "trace.json").write_text(json.dumps(res.trace, separators=(",", ":")), encoding="utf-8")
-            (d / "meta.json").write_text(json.dumps(dict(video=j.video, profile=j.profile, created=datetime.now().isoformat(timespec="seconds"), n_alerts=len(res.alerts), stats=res.stats, metrics=res.metrics,
-                                                         notes=res.notes), ensure_ascii=False, default=str), encoding="utf-8")
-            j.stats, j.metrics, j.notes, j.progress, j.state = res.stats, res.metrics, res.notes, 1.0, "done"
+            (d / "meta.json").write_text(json.dumps(dict(video=j.video, profile=j.profile, created=datetime.now().isoformat(timespec="seconds"), n_alerts=len(res.alerts), stats=res.stats,
+                                                         metrics=res.metrics, notes=res.notes), ensure_ascii=False, default=str), encoding="utf-8")
+            with j.lock:
+                j.stats, j.metrics, j.notes, j.progress, j.horizon, j.state = res.stats, res.metrics, res.notes, 1.0, max(j.horizon, dur), "done"
+                j.alerts = [dict(a, key=f"{i}") for i, a in enumerate(res.trace["alerts"])] if res.trace else j.alerts
         except Exception as e:
             j.state, j.error = "error", f"{type(e).__name__}: {e}"[:400]
+
+    def stream(self, jid: str, since: int = 0) -> dict:
+        """Живой вывод: кадры с номера `since`, все тревоги на сейчас, до какой секунды посчитано. Клиент опрашивает ~3 раза в секунду."""
+        j = self.job(jid)
+        with j.lock:
+            new = j.frames[since:since + 2000]
+            return dict(state=j.state, progress=round(j.progress, 3), error=j.error, frames=new, next=since + len(new), alerts=list(j.alerts), horizon=round(j.horizon, 2), frame_hw=j.frame_hw,
+                        fps=j.fps, gt=j.gt, stats=j.stats if j.state == "done" else None, metrics=j.metrics)
 
     def job(self, jid: str) -> Job:
         if jid not in self.jobs:

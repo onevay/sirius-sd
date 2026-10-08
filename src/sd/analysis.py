@@ -99,6 +99,11 @@ def photo_all(cycles: pd.DataFrame, bundle_dir: Path, backend: str = "auto", fra
     bundle = PC.load_bundle(Path(bundle_dir))
     crops = PV.extract_crops(cycles, frames, window, 224, scale, progress=(lambda i, n: progress("crops", i, n)) if progress else None, ctx=ctx)
     ft = PV.frame_table(crops)
+    if ft.empty:        # ни у одного цикла не нашлось кадров рта: фото-признаки останутся пропусками, а не ошибкой
+        df = pd.DataFrame(columns=PV.KEY)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(out, index=False)
+        return df
     emb = PV.embed_crops(ft, tuple(bundle["manifest"]["backbones"]) if not zero_shot else tuple(dict.fromkeys(list(bundle["manifest"]["backbones"]) + ["clip"])),
                          backend, progress=(lambda bb, i, n, dt: progress(f"embed {bb}", i, n)) if progress else None)
     per = {"p": PV.score_frames(bundle, emb)}

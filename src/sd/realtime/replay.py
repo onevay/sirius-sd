@@ -91,7 +91,7 @@ def _box_row(u: AlertUpdate, frame_hw) -> tuple:
 
 def replay_video(video: str | Path, profile: Profile, *, start: float = 0.0, end: float | None = None, speed: float = 0.0, gt: pd.DataFrame | None = None,
                  pose_fn: Callable | None = None, engine: StreamEngine | None = None, process_fps: float | None = None, render: bool = False, on_alert: Callable | None = None,
-                 progress: Callable[[float, float], None] | None = None, frames_fn: Callable | None = None, probe_duration: Callable | None = None, out_root: Path | None = None,
+                 progress: Callable[[float, float], None] | None = None, on_frame: Callable | None = None, frames_fn: Callable | None = None, probe_duration: Callable | None = None, out_root: Path | None = None,
                  save: bool = True) -> ReplayResult:
     """Прогон файла через потоковый движок. `speed`: 0 — как можно быстрее, 1 — реальное время, N — в N раз быстрее. `gt` — таблица эталона (весь файл, фильтруется по клипу)."""
     from .worker import make_engine
@@ -152,7 +152,10 @@ def replay_video(video: str | Path, profile: Profile, *, start: float = 0.0, end
             fr = _annotate(img, eng.last_dets, act, gl, t)
             writer.write(fr[: fr.shape[0] - fr.shape[0] % 2, : fr.shape[1] - fr.shape[1] % 2])
         ms.append((time.perf_counter() - t0) * 1000)
-        trace_frames.append([round(t, 3), [[int(tid), *(round(float(v), 1) for v in b)] for tid, b in eng.last_dets]])
+        row = [round(t, 3), [[int(tid), *(round(float(v), 1) for v in b)] for tid, b in eng.last_dets]]
+        trace_frames.append(row)
+        if on_frame:
+            on_frame(row, eng.frame_hw)          # живой вывод: клиент рисует рамки по мере обработки
         n_frames += 1
         if progress and n_frames % 10 == 0:
             progress(t, end if end is not None else t)
