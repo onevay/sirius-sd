@@ -135,6 +135,10 @@ render/        pose.mp4, cycles.mp4, *_tXX.png ...                       — в�
 |---|---|
 | `sd.cmd eval -d <папка> [-d …] [-p профиль …]` | события → Event F1 с интервалом, P, R, FP/ч, бюджет ошибок до `--target-f1`, причины ошибок; пишет `outputs/experiments/<время>_<имя>/`. Несколько `-p` — сравнение. `--role hidden` — порог из профиля, подбор запрещён; `--mode clips` — грубая оценка по имени папки |
 | `sd.cmd gt [-d <папка>] [--export файл.csv]` | состояние эталона `labels/events_gt.csv`, предупреждения о разметке, экспорт в формате организаторов |
+| `sd.cmd monitor [--streams папка] [-p профиль] [--watch] [--speed 1]` | мониторинг: камеры = папки `<район>-<индекс>-<время начала>`, тревоги → `outputs/monitor/monitor.db` ([REALTIME.md](REALTIME.md)) |
+| `sd.cmd app [--port 8502]` | интерфейс оператора: дашборд тревог, подтверждение, камеры, журнал |
+| `sd.cmd monitor-demo [--n 14] [--clear]` | демо-тревоги (помечены «ДЕМО») для работы над интерфейсом без моделей |
+| `sd.cmd feedback-export` | решения оператора → `labels/events_gt.csv` (подтверждено → POSITIVE, ложная → NEGATIVE) |
 | `python -m sd.run --input <папка\|файл> --out preds.csv [--profile имя] [--roi roi.json] [--render каталог]` | единая команда запуска: `preds.csv` (события выше порога), `preds.all.csv`, `preds.manifest.json` |
 
 * `sd.cmd ui` запускает Streamlit **без наблюдателя файлов**: после правок кода интерфейс нужно перезапустить (иначе в браузере остаётся старая версия страницы, как было при проверке).

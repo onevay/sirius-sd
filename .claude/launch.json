@@ -3,16 +3,44 @@
   "configurations": [
     {
       "name": "streamlit-ui",
-      "runtimeExecutable": ".venv\\Scripts\\python.exe",
-      "runtimeArgs": ["-m", "streamlit", "run", "src/sd/ui/app.py", "--server.port", "8501", "--server.address", "127.0.0.1", "--server.headless", "true",
-                      "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false"],
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "streamlit",
+        "run",
+        "src/sd/ui/app.py",
+        "--server.port",
+        "8501",
+        "--server.address",
+        "127.0.0.1",
+        "--server.headless",
+        "true",
+        "--server.fileWatcherType",
+        "none",
+        "--browser.gatherUsageStats",
+        "false"
+      ],
       "port": 8501
     },
     {
       "name": "streamlit-ui-8502",
-      "runtimeExecutable": ".venv\\Scripts\\python.exe",
-      "runtimeArgs": ["-m", "streamlit", "run", "src/sd/ui/app.py", "--server.port", "8502", "--server.address", "127.0.0.1", "--server.headless", "true",
-                      "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false"],
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "streamlit",
+        "run",
+        "src/sd/ui/app.py",
+        "--server.port",
+        "8502",
+        "--server.address",
+        "127.0.0.1",
+        "--server.headless",
+        "true",
+        "--server.fileWatcherType",
+        "none",
+        "--browser.gatherUsageStats",
+        "false"
+      ],
       "port": 8502
     }
   ]

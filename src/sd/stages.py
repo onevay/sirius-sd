@@ -24,7 +24,7 @@ from .config import stable_hash
 from .cycles import STATE_ID, Cycle, find_cycles
 from .events import Event, ScoredCycle, build_events, events_to_frame, heuristic_cycle_score
 from .features import build_series, kp_threshold, track_grid, visibility_fraction
-from .paths import OUTPUTS, video_id
+from .paths import OUTPUTS, portable, video_id
 from .pose_track import PoseTracker
 from .tracks import Tracks, stitch_tracks
 from .video_io import choose_stride, iter_frames, probe
@@ -130,7 +130,7 @@ def stage_pose(video: str | Path, cfg: dict, start: float = 0.0, end: float | No
     df = pd.DataFrame(rows, columns=["frame", "t", "tid", "x1", "y1", "x2", "y2", "score", "h"])
     kp = np.stack(kps).astype(np.float32) if kps else np.zeros((0, 17, 3), np.float32)
     tr = Tracks(df, kp, pd.DataFrame(frame_t, columns=["frame", "t"]),
-                dict(video=str(video), video_info=info.to_dict(), stride=stride, proc_fps=proc_fps, start=start, end=end,
+                dict(video=portable(video), video_info=info.to_dict(), stride=stride, proc_fps=proc_fps, start=start, end=end,
                      pose=pt.describe(), wall_sec=round(wall, 2), frames_processed=len(frame_t), warmup_sec=round(warmup, 1),
                      fps_wall=round(len(frame_t) / wall, 2) if wall > 0 else None,
                      fps_steady=round((len(frame_t) - 1) / (wall - warmup), 2) if wall - warmup > 0 and len(frame_t) > 1 else None,
@@ -220,7 +220,9 @@ def assemble_events(tr: Tracks, series: pd.DataFrame, cycles: pd.DataFrame, cfg:
               for r in g.itertuples()]
         events += build_events(sc, cfg["events"], tid=int(tid), quality=q)
     boxes = {t: (lambda tt, _t=t: tr.box_at(_t, tt)) for t in tr.tids}
-    return events_to_frame(events, camera_id, clip_id, boxes), events
+    vi = tr.meta.get("video_info") or {}
+    wh = (int(vi["width"]), int(vi["height"])) if vi.get("width") and vi.get("height") else None
+    return events_to_frame(events, camera_id, clip_id, boxes, wh), events
 
 
 def stage_events(tr: Tracks, series: pd.DataFrame, cycles: pd.DataFrame, cfg: dict, rd: Path, camera_id: str, clip_id: str,

@@ -73,7 +73,7 @@ def stop() -> int:
     if EXTERNAL:
         return 0
     for p in psutil.process_iter(["name"]):
-        if (p.info["name"] or "").lower() in ("ollama.exe", "ollama app.exe"):
+        if (p.info["name"] or "").lower() in ("ollama.exe", "ollama app.exe", "ollama", "ollama app"):
             try:
                 p.kill()
                 n += 1

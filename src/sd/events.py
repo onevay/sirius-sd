@@ -113,14 +113,21 @@ def build_events(cycles: list[ScoredCycle], cfg_events: dict, tid: int | None = 
     return events
 
 
-def events_to_frame(events: list[Event], camera_id: str, clip_id: str, boxes: dict[int, "callable"] | None = None) -> pd.DataFrame:
+def events_to_frame(events: list[Event], camera_id: str, clip_id: str, boxes: dict[int, "callable"] | None = None, frame_wh: tuple[int, int] | None = None) -> pd.DataFrame:
     """Таблица в формате организаторов (руководство §10.1).
 
     boxes[tid](t) -> (x1,y1,x2,y2) рамка ВСЕГО человека на кадре, ближайшем к peak_sec, в пикселях исходного кадра.
+    frame_wh=(ширина, высота) — рамка обрезается по кадру и округляется до целых пикселей (§10.1: x1 < x2, y1 < y2, внутри кадра).
     """
     rows = []
     for i, ev in enumerate(sorted(events, key=lambda x: x.start), 1):
-        box = boxes[ev.tid](ev.peak) if boxes and ev.tid in boxes else (np.nan,) * 4
+        box = boxes[ev.tid](ev.peak) if boxes and ev.tid in boxes else None
+        box = box if box is not None else (np.nan,) * 4
+        if frame_wh and np.isfinite(box).all():
+            w, h = frame_wh
+            x1, y1 = max(0.0, min(box[0], w - 2)), max(0.0, min(box[1], h - 2))
+            x2, y2 = min(float(w), max(box[2], x1 + 1)), min(float(h), max(box[3], y1 + 1))
+            box = (int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2)))
         rows.append(dict(camera_id=camera_id, clip_id=clip_id, event_id=f"{camera_id}_{clip_id}_{i:04d}",
                          start_sec=round(ev.start, 2), end_sec=round(ev.end, 2), confidence=round(ev.confidence, 3),
                          label="smoking_like", person_track_id=ev.tid, peak_sec=round(ev.peak, 2),

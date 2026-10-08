@@ -155,7 +155,7 @@ def bsdtar() -> str:
     """Системный bsdtar (Windows 10/11: C:\\Windows\\System32\\tar.exe, libarchive читает RAR5/7z); GNU tar из Git RAR не умеет."""
     import shutil
 
-    for c in (r"C:\Windows\System32\tar.exe", shutil.which("bsdtar") or "", shutil.which("7z") or ""):
+    for c in (r"C:\Windows\System32\tar.exe", shutil.which("bsdtar") or "", shutil.which("7z") or "", shutil.which("7zz") or ""):
         if c and Path(c).exists():
             return c
     raise FileNotFoundError("нужен bsdtar (Windows: C:\\Windows\\System32\\tar.exe) или 7z для распаковки RAR")

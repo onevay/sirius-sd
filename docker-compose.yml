@@ -1,5 +1,6 @@
 # Запуск проекта в изолированной среде.
 #   docker compose up --build ui                       # веб-интерфейс на http://127.0.0.1:8501 (порт опубликован ТОЛЬКО на этой машине)
+#   docker compose up app                              # интерфейс оператора на http://127.0.0.1:8502 (воркер: docker compose --profile monitor up -d monitor)
 #   docker compose run --rm cli doctor                 # проверка окружения
 #   docker compose run --rm cli recognize /app/data/курение/sm_6.mp4 --start 0 --end 30 --cycle-bundle models/cycle/cycle_v1 --photo-bundle models/photo/photo_v2
 #   docker compose --profile vlm up -d ollama          # локальный Ollama для VLM (внутри сети compose, наружу не публикуется)
@@ -22,7 +23,8 @@ x-sd-common: &sd-common
     - ./data_external:/app/data_external        # открытые датасеты
     - ./models:/app/models                      # веса и пакеты моделей
     - ./outputs:/app/outputs                    # результаты, кэши позы, прогоны распознавания
-    - ./labels:/app/labels                      # ручные метки циклов
+    - ./labels:/app/labels                      # разметка (события и циклы)
+    - ./streams:/app/streams                    # имитация камер: папки <район>-<индекс>-<время начала>
     - ./docs/review:/app/docs/review            # метки ассистента/жестов (CSV)
   # ограничьте память под слабый ПК, чтобы контейнер не вытеснил систему в своп: mem_limit: 5g
 
@@ -32,6 +34,17 @@ services:
     command: ["ui", "--host", "0.0.0.0", "--port", "8501"]
     ports:
       - "127.0.0.1:8501:8501"                   # не 0.0.0.0: интерфейс не должен быть виден из сети
+
+  app:                                          # интерфейс оператора (мониторинг): http://127.0.0.1:8502
+    <<: *sd-common
+    command: ["app", "--host", "0.0.0.0", "--port", "8502"]
+    ports:
+      - "127.0.0.1:8502:8502"
+
+  monitor:                                      # воркер мониторинга: docker compose --profile monitor up -d monitor
+    <<: *sd-common
+    profiles: ["monitor"]
+    command: ["monitor", "--watch", "--speed", "1"]
 
   cli:
     <<: *sd-common

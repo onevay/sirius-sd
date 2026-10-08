@@ -6,6 +6,8 @@
 | документ | что внутри |
 |---|---|
 | [docs/AUDIT_AND_CHANGES.md](docs/AUDIT_AND_CHANGES.md) | **аудит версии, что изменено в интерфейсе/разметке/оценке, как пользоваться, анализ улучшений** |
+| [docs/REALTIME.md](docs/REALTIME.md) | **мониторинг и real-time**: камеры-папки `район-индекс-время`, движок потока, тревоги, приложение оператора, ограничения |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | **запуск и перенос между устройствами**: установка на любой ОС, `.env`, переменные `SD_*`, переносимые пути, чек-лист переноса, Docker |
 | [docs/ANALYSIS.md](docs/ANALYSIS.md) | **главный файл с выводами**: источники и подходы, EDA, качество каждой части пайплайна на ваших видео, железо и VLM, решения и следующие шаги |
 | [docs/CLI.md](docs/CLI.md) | как проверять каждую часть пайплайна из командной строки, что рисуется на видео |
 | [docs/DATA_AND_WEIGHTS.md](docs/DATA_AND_WEIGHTS.md) | какие веса уже скачаны, что можно скачать вручную (Kaggle/Roboflow), лицензии, безопасность `.pt` |
@@ -14,6 +16,13 @@
 | [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md) | **дальнейшие шаги** по источникам данных: загрузка → разметка → проверка детекции / распознавания / классификации, с командами, ожидаемыми результатами и критериями решений |
 | [docs/DOCKER.md](docs/DOCKER.md) | запуск в изолированной среде (Docker) и перенос на другой ПК |
 | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) | журнал прогонов: дата, команда, результат, решение |
+
+## Установка и запуск
+```bash
+python scripts/bootstrap.py --dev --cpu-torch   # любая ОС: .venv, зависимости, .env, проверка (--minimal — без torch/ultralytics)
+./sd.sh <команда>   |   make ui | app | monitor | test   # Linux/macOS;  Windows: sd.cmd <команда>
+```
+Пути к данным, весам и результатам можно вынести переменными `SD_*` или файлом `.env` — [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Быстрый старт (Windows, окружение активировать не нужно)
 ```bash
@@ -37,6 +46,9 @@ sd.cmd resources                            # что занимает ОЗУ/CPU
 sd.cmd ui                                   # веб-интерфейс: Оценка · Просмотр · Разметка · Модели · Этапы: http://localhost:8501
 sd.cmd eval -d data/курение -d data/лжекурение -p baseline   # Event F1 по эталону событий на выбранных папках (журнал outputs/experiments/)
 sd.cmd gt -d data/курение                   # состояние эталона событий (labels/events_gt.csv)
+sd.cmd monitor --watch --speed 1            # мониторинг: камеры = папки streams/<район>-<индекс>-<время начала>, тревоги → outputs/monitor/monitor.db
+sd.cmd app                                  # интерфейс оператора (дашборд тревог, подтверждение): http://localhost:8502
+sd.cmd monitor-demo                         # демо-тревоги для работы над интерфейсом без моделей
 python -m sd.run --input clips/ --profile final --out preds.csv   # единая команда запуска: preds.csv + manifest
 sd.cmd test                                 # юнит-тесты
 ```
@@ -79,7 +91,7 @@ src/sd/
   ui/                         Streamlit: app.py (навигация), page_eval / page_view / page_label / page_models / page_stages, labeler (видео-разметчик)
   eda.py bench.py hw.py       EDA, бенчмарки, отчёт о железе
   safety.py models.py         сканер .pt перед загрузкой, реестр и загрузка весов
-tests/                        243 юнит-теста (циклы, события, evaluate, признаки, фото-конвейер, пакеты моделей, интерфейс, окружение, безопасность весов, обучение): sd.cmd test
+tests/                        286 юнит-тестов (циклы, события, evaluate, признаки, фото-конвейер, пакеты моделей, интерфейс, окружение, безопасность весов, обучение): sd.cmd test
 Dockerfile docker-compose.yml  запуск в контейнере (docs/DOCKER.md); сборка не проверялась
 data/  models/  outputs/      видео, веса, артефакты запусков (не коммитить; приватность)
 ```

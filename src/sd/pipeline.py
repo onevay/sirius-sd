@@ -29,7 +29,7 @@ from . import analysis as A
 from . import feature_auc as FA
 from . import stages
 from .config import stable_hash
-from .paths import OUTPUTS, ROOT, video_id
+from .paths import OUTPUTS, ROOT, portable, video_id
 
 Progress = Callable[[str, int, int], None] | None
 KEY = ["video", "tid", "start"]
@@ -212,6 +212,8 @@ def recognize(video: str | Path, start: float, end: float | None, cfg: dict, opt
         tab["score"] = score
         scored = tab
     scores = {(int(r.tid), round(float(r.start), 3)): float(r.score) for r in scored.itertuples() if hasattr(r, "score") and np.isfinite(r.score)} if len(scored) and "score" in scored else {}
+    if scores and len(scored) > len(scores):   # цикл без оценки классификатора (NaN) получает в сборке эвристику по длительности паузы — шкалы разные, это надо видеть
+        warnings.append(f"{len(scored) - len(scores)} из {len(scored)} циклов без оценки классификатора: для них в сборке событий использована эвристика по длительности паузы")
 
     # ---- 5. события по регламенту
     t0 = time.perf_counter()
@@ -234,7 +236,7 @@ def recognize(video: str | Path, start: float, end: float | None, cfg: dict, opt
         render_video(video, tr, cfg, out_dir / "overlay.mp4", renderer=r, progress=pr("видео с разметкой"))
         tick("render", t0)
 
-    meta = dict(video=str(video), clip=clip, window=[start, end], run_dir=str(rd), out_dir=str(out_dir), created=time.strftime("%Y-%m-%d %H:%M:%S"),
+    meta = dict(video=portable(video), clip=clip, window=[start, end], run_dir=portable(rd), out_dir=portable(out_dir), created=time.strftime("%Y-%m-%d %H:%M:%S"),
                 counts=dict(cycles=int(len(cycles)), rejected=int(len(rej)), events=int(len(ev_df)), people=int(len(tr.tids)),
                             vlm_calls=int(scored["vlm_called"].sum()) if "vlm_called" in scored else 0),
                 options={k: (list(v) if isinstance(v, tuple) else v) for k, v in asdict(opts).items()},

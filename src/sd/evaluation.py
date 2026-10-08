@@ -374,3 +374,39 @@ def finalize_report(preds: Sequence[Pred], gts: Sequence[GT], durations: dict[st
     rep2 = build_report(preds, gts, durations, replace(st, threshold=th), **kw)
     rep2.notes.append(f"порог {th:.3f} выбран по кривой этого же набора ({'центр плато' if policy == 'plateau' else 'вершина кривой'}): цифра оптимистична, честная — на другом наборе с этим порогом")
     return rep2
+
+
+def paired_bootstrap(preds_a: Sequence[Pred], preds_b: Sequence[Pred], gts: Sequence[GT], durations: dict[str, float], st_a: Settings, st_b: Settings | None = None,
+                     n: int = 500, seed: int = 0) -> dict:
+    """Парный бутстрэп по клипам: насколько надёжно профиль B лучше профиля A на ОДНИХ и тех же клипах. Возвращает среднюю разность F1 (B − A), 95% интервал и долю
+    ресэмплов, где B лучше. Интервалы F1 каждого профиля по отдельности перекрываются почти всегда; парная разность чувствительнее, потому что трудные клипы общие."""
+    st_b = st_b or st_a
+    clips = sorted(durations)
+    if len(clips) < 3:
+        return dict(n=0, diff=None, lo=None, hi=None, p_better=None, clips=len(clips))
+    ka = [p for p in preds_a if p.confidence >= st_a.threshold]
+    kb = [p for p in preds_b if p.confidence >= st_b.threshold]
+    pa: dict[str, list] = {}
+    pb: dict[str, list] = {}
+    gg: dict[str, list] = {}
+    for src, dst in ((ka, pa), (kb, pb)):
+        for p in src:
+            dst.setdefault(p.clip_id, []).append(p)
+    for g in gts:
+        gg.setdefault(g.clip_id, []).append(g)
+    rng = np.random.default_rng(seed)
+    diffs = []
+    for _ in range(n):
+        sa, sb, sg = [], [], []
+        for j, c in enumerate(rng.choice(clips, len(clips))):
+            cid = f"{c}#{j}"
+            sa += [replace(p, clip_id=cid) for p in pa.get(c, ())]
+            sb += [replace(p, clip_id=cid) for p in pb.get(c, ())]
+            sg += [replace(g, clip_id=cid) for g in gg.get(c, ())]
+        if not any(g.label == "POSITIVE" for g in sg):
+            continue
+        diffs.append(evaluate(sb, sg, **st_b.kw()).f1 - evaluate(sa, sg, **st_a.kw()).f1)
+    if len(diffs) < 20:
+        return dict(n=len(diffs), diff=None, lo=None, hi=None, p_better=None, clips=len(clips))
+    d = np.array(diffs)
+    return dict(n=len(d), diff=float(d.mean()), lo=float(np.percentile(d, 2.5)), hi=float(np.percentile(d, 97.5)), p_better=float((d > 0).mean()), clips=len(clips))

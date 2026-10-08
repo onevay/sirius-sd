@@ -11,6 +11,7 @@ import streamlit.components.v1 as components
 from sd import experiments as XP
 from sd import pipeline as P
 from sd import viewdata as VD
+from sd.paths import from_portable
 from sd.ui.player import build_data, player_html
 
 
@@ -54,7 +55,7 @@ def _experiment() -> None:
     want_c = st.session_state.get("view_clip")
     idx = next((i for i, c in enumerate(shown) if c["clip_id"] == want_c), 0)
     clip = shown[st.selectbox("Клип", range(len(shown)), index=idx, format_func=lambda i: f"{shown[i]['clip_id']} · ошибок {err_n.get(shown[i]['clip_id'], 0)}")]
-    cid, video = clip["clip_id"], Path(clip["path"])
+    cid, video = clip["clip_id"], from_portable(clip["path"])
     if not video.exists():
         st.warning(f"Видео не найдено: {video}")
         return
@@ -68,13 +69,14 @@ def _experiment() -> None:
     if warn:
         st.warning(warn)
     tracks, src = {}, (0, 0)
-    pose = Path(clip["run_dir"]) / "pose" if clip.get("run_dir") else None
+    pose = from_portable(clip["run_dir"]) / "pose" if clip.get("run_dir") else None
     if pose and (pose / "tracks.parquet").exists():
         tp = _tracks(str(pose), (pose / "tracks.parquet").stat().st_mtime)
         tracks, src = tp["tracks"], (tp["src_w"], tp["src_h"])
     cy = pd.DataFrame()
-    if clip.get("out_dir") and (Path(clip["out_dir"]) / "cycles_scored.parquet").exists():
-        cy = pd.read_parquet(Path(clip["out_dir"]) / "cycles_scored.parquet")
+    out_dir = from_portable(clip.get("out_dir"))
+    if out_dir and (out_dir / "cycles_scored.parquet").exists():
+        cy = pd.read_parquet(out_dir / "cycles_scored.parquet")
     th = rep.settings["threshold"]
     e = ev[(ev.clip_id == cid) & (ev.confidence >= th)] if len(ev) else ev
     data = build_data(cy, e, clip["duration"], 12.0, 0.0, gt=VD.gt_payload(gt, cid) if len(gt) else [], errors=VD.errors_payload(rep.errors, cid), tracks=tracks, src_size=src)

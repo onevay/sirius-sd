@@ -12,3 +12,5 @@ models/
 outputs/
 labels/*.csv
 !labels/README.md
+.env
+.requirements.install.txt

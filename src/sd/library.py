@@ -21,14 +21,31 @@ def videos_in_dir(d: str | Path) -> list[Path]:
     return sorted((p for p in Path(d).iterdir() if _is_video(p)), key=lambda p: p.name) if Path(d).is_dir() else []
 
 
+SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", "outputs", "models", ".ultralytics"}
+
+
+def _walk_dirs(root: Path, max_depth: int = 5):
+    """Папки под `root` с ограничением глубины и без служебных каталогов: путь, который пользователь добавил по ошибке (например, корень диска), не должен подвесить интерфейс."""
+    stack = [(root, 0)]
+    while stack:
+        d, depth = stack.pop()
+        yield d
+        if depth >= max_depth:
+            continue
+        try:
+            subs = [p for p in d.iterdir() if p.is_dir() and not p.name.startswith(".") and p.name not in SKIP_DIRS]
+        except OSError:
+            continue
+        stack.extend((p, depth + 1) for p in subs)
+
+
 def discover_dirs(roots: Iterable[Path] | None = None, extra: Iterable[str | Path] = ()) -> pd.DataFrame:
     """Все папки, содержащие видео напрямую. Колонки: path, name (путь от корня проекта), clips, weak (метка по имени папки или '')."""
     seen: dict[Path, int] = {}
     for root in [*(roots if roots is not None else (DATA, EXTERNAL)), *map(Path, extra)]:
-        if not root.exists():
+        if not root.is_dir():
             continue
-        cands = [root, *[p for p in root.rglob("*") if p.is_dir()]] if root.is_dir() else []
-        for d in cands:
+        for d in _walk_dirs(root):
             n = len(videos_in_dir(d))
             if n:
                 seen[d.resolve()] = n

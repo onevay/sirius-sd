@@ -6,7 +6,7 @@
 FROM python:3.13-slim
 
 ENV PYTHONUNBUFFERED=1 PYTHONUTF8=1 LANG=C.UTF-8 LC_ALL=C.UTF-8 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    SD_ROOT=/app SD_ENV_READY=1 OPENCV_LOG_LEVEL=ERROR OPENCV_FFMPEG_LOGLEVEL=-8 SD_THREADS=2
+    SD_ROOT=/app SD_STREAMS=/app/streams SD_ENV_READY=1 OPENCV_LOG_LEVEL=ERROR OPENCV_FFMPEG_LOGLEVEL=-8 SD_THREADS=2
 
 # libgl1/libglib2.0-0 нужны opencv-python; ffmpeg приходит в составе imageio-ffmpeg
 RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 ca-certificates \
@@ -27,13 +27,13 @@ COPY src ./src
 COPY configs ./configs
 # метки и сводки, на которые ссылаются команды по умолчанию (docs/review/*.csv); остальные документы в образ не нужны
 COPY docs/review ./docs/review
-RUN pip install --no-deps -e . && mkdir -p data data_external models outputs labels
+RUN pip install --no-deps -e . && mkdir -p data data_external models outputs labels streams
 
 # том с весами/данными/результатами монтируется снаружи; пользователь без прав root
 RUN useradd -m -u 1000 sd && chown -R sd:sd /app
 USER sd
 
-EXPOSE 8501
+EXPOSE 8501 8502
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s CMD python -c "import sd" || exit 1
 ENTRYPOINT ["sd"]
 CMD ["ui", "--host", "0.0.0.0", "--port", "8501"]

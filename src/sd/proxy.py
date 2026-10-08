@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .paths import OUTPUTS, video_id
+from .paths import OUTPUTS, portable, video_id
 
 PROXY_DIR = OUTPUTS / "proxy"
 
@@ -30,7 +30,7 @@ def ffmpeg_exe() -> str:
 def proxy_path(video: str | Path, height: int = 480, fps: float = 12.0, codec: str = "h264", root: Path | None = None) -> Path:
     v = Path(video)
     st = v.stat()
-    key = hashlib.md5(f"{v.resolve()}|{st.st_size}|{st.st_mtime_ns}|{height}|{fps}|{codec}".encode()).hexdigest()[:8]
+    key = hashlib.md5(f"{portable(v)}|{st.st_size}|{st.st_mtime_ns}|{height}|{fps}|{codec}".encode()).hexdigest()[:8]
     return (root or PROXY_DIR) / f"{video_id(v)}_{key}.{'webm' if codec == 'vp8' else 'mp4'}"
 
 

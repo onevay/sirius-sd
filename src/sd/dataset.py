@@ -159,6 +159,25 @@ def save_label(video: str, tid: int, peak_t: float, cx: float, cy: float, label:
     out[LABEL_COLS].to_csv(LABELS_CSV, index=False)
 
 
+def save_labels_bulk(rows: pd.DataFrame, replace_source: str | None = "gt") -> int:
+    """Добавляет много меток разом (одна запись файла). Ранее записанные строки того же `source` для видео из `rows` заменяются — повторный запуск не плодит дубли.
+    Ручные метки (source=manual) не затрагиваются. Нужные колонки: video, tid, peak_t, cx, cy, label (+ source, note)."""
+    if rows.empty:
+        return 0
+    LABELS.mkdir(parents=True, exist_ok=True)
+    df = load_labels()
+    if replace_source and len(df) and "source" in df:
+        df = df[~((df.source == replace_source) & df.video.isin(set(rows.video)))]
+    new = rows.copy()
+    for c, v in (("source", replace_source or "manual"), ("note", ""), ("labeler", "gt"), ("ts", pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))):
+        if c not in new:
+            new[c] = v
+    new["peak_t"], new["cx"], new["cy"] = new["peak_t"].round(3), new["cx"].round(1), new["cy"].round(1)
+    out = new[LABEL_COLS] if df.empty else pd.concat([df, new[LABEL_COLS]], ignore_index=True)
+    out.to_csv(LABELS_CSV, index=False)
+    return len(new)
+
+
 def visual_labels_to_project(csv: Path, table: pd.DataFrame, tol_start: float = 0.06) -> pd.DataFrame:
     """Метки в формате визуального просмотра (`video, tid, start, label`; start округлён до 0.1 с) -> формат проекта (`video, peak_t, cx, cy, label`).
 

@@ -19,3 +19,5 @@ docs/*.md
 *.onnx
 kernel.errors.txt
 *.log
+streams/
+.env

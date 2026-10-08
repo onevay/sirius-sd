@@ -1462,6 +1462,61 @@ def ui(port: int = 8501, headless: bool = True,
     raise typer.Exit(subprocess.call(cmd, cwd=str(ROOT)))
 
 
+@app.command("monitor", help="Мониторинг (real-time контур): камеры = папки <район>-<индекс>-<время начала> в --streams; тревоги пишутся в outputs/monitor/monitor.db, смотреть — `sd app`. "
+                            "--watch следит за папками и подхватывает новые фрагменты; --speed 1 — в реальном времени, 0 — как можно быстрее.")
+def monitor_cmd(streams: Annotated[Optional[Path], typer.Option(help="каталог с папками-камерами (по умолчанию SD_STREAMS или ./streams)")] = None,
+                profile: Annotated[Optional[str], typer.Option("--profile", "-p", help="профиль моделей (configs/experiments); по умолчанию default")] = None,
+                camera: Annotated[Optional[list[str]], typer.Option(help="только эти камеры (район-индекс), можно несколько раз")] = None,
+                watch: Annotated[bool, typer.Option("--watch/--once")] = False, speed: Annotated[float, typer.Option(help="скорость воспроизведения: 1 — как в жизни, 0 — без пауз")] = 0.0,
+                interval: Annotated[float, typer.Option(help="период опроса папок в режиме --watch, с")] = 5.0) -> None:
+    from . import profiles as PR
+    from .paths import STREAMS
+    from .realtime.worker import run_monitor
+
+    prof = PR.load(profile) if profile else PR.default_profile()
+    root = streams or STREAMS
+    console.print(f"камеры: {root} · профиль {prof.name} · {prof.describe()}")
+    if not (prof.opts().get("cycle_bundle")):
+        console.print("[yellow]! классификатор цикла не задан: оценка — эвристика по длительности паузы (для отладки; не отличает питьё и телефон от курения)[/]")
+    try:
+        tot = run_monitor(root, prof, cameras=camera, watch=watch, speed=speed, interval=interval, log=console.print)
+    except KeyboardInterrupt:
+        console.print("остановлено")
+        return
+    console.print(f"готово: фрагментов {tot['chunks']}, новых тревог {tot['alerts']}, обновлений {tot['updates']}")
+
+
+@app.command("monitor-demo", help="Демонстрационные тревоги для разработки интерфейса оператора без моделей (помечены «ДЕМО»). --clear удаляет их.")
+def monitor_demo_cmd(n: Annotated[int, typer.Option(help="сколько тревог создать")] = 14, clear: Annotated[bool, typer.Option("--clear")] = False) -> None:
+    from .realtime.demo import seed_demo
+    from .realtime.store import AlertStore
+
+    st = AlertStore()
+    if clear:
+        console.print(f"удалено демо-тревог: {st.delete_demo()}")
+        return
+    console.print(f"создано демо-тревог: {seed_demo(st, n)}; смотреть: sd app")
+
+
+@app.command("feedback-export", help="Решения оператора (подтверждено / ложная) → эталон событий labels/events_gt.csv: подтверждённые — POSITIVE, ложные — NEGATIVE (сложные негативы).")
+def feedback_export_cmd() -> None:
+    from .realtime.feedback import export_reviewed
+    from .realtime.store import AlertStore
+
+    console.print(export_reviewed(AlertStore()))
+
+
+@app.command("app", help="Интерфейс оператора (мониторинг): дашборд тревог, подтверждение, камеры, журнал. Отдельно от `sd ui` (инструменты разработчика). По умолчанию http://localhost:8502")
+def app_cmd(port: int = 8502, headless: bool = True, host: Annotated[str, typer.Option(help="адрес привязки; в контейнере 0.0.0.0")] = "127.0.0.1") -> None:
+    import subprocess
+
+    app_py = Path(__file__).parent / "ui" / "user_app.py"
+    cmd = [sys.executable, "-m", "streamlit", "run", str(app_py), "--server.port", str(port), "--server.address", host, "--server.headless", str(headless).lower(),
+           "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false"]
+    console.print("запуск:", " ".join(cmd))
+    raise typer.Exit(subprocess.call(cmd, cwd=str(ROOT)))
+
+
 @app.command(help="Юнит-тесты (pytest).")
 def test() -> None:
     import subprocess

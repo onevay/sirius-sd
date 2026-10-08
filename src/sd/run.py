@@ -19,6 +19,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import experiments as XP
+from . import preds_check as PC
 from . import library as LIB
 from . import profiles as PR
 from . import roi as ROI
@@ -68,11 +69,23 @@ def main(argv: list[str] | None = None) -> int:
         allev = allev.assign(camera_id=allev.clip_id.map(cam), clip_id=allev.clip_id.map(stem))
         allev["event_id"] = [f"{c}_{i:04d}" for c, i in zip(allev.clip_id, allev.groupby("clip_id").cumcount() + 1)]
     out = allev[allev.confidence >= th][RN.EVENT_COLUMNS] if len(allev) else allev
+    sizes = {}
+    for r in runs:                      # размер кадра нужен проверке «рамка внутри кадра»; не открывается — проверку пропускаем
+        try:
+            from .video_io import probe
+
+            i = probe(r.video)
+            sizes[r.video.stem] = (i.width, i.height)
+        except Exception:
+            pass
+    issues = PC.validate(out, sizes)
+    for w in issues:
+        print(f"! формат: {w}", file=sys.stderr)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(a.out, index=False)
     allev.to_csv(a.out.with_suffix(".all.csv"), index=False)
     man = dict(profile=prof.to_dict(), describe=prof.describe(), fingerprint=prof.fingerprint(), confidence_threshold=th, roi=a.roi, input=str(src), clips=len(videos),
-               events_total=int(len(allev)), events_written=int(len(out)), errors={r.clip_id: r.error for r in runs if r.error}, seconds=round(time.perf_counter() - t0, 1),
+               events_total=int(len(allev)), format_issues=issues, events_written=int(len(out)), errors={r.clip_id: r.error for r in runs if r.error}, seconds=round(time.perf_counter() - t0, 1),
                per_clip_seconds={r.clip_id: r.seconds for r in runs}, created_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"), git=XP.git_state())
     a.out.with_suffix(".manifest.json").write_text(json.dumps(man, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(f"события: {len(out)} из {len(allev)} (порог {th}); {a.out}")
