@@ -2,7 +2,7 @@
 # Изолированная среда проекта: CPU-сборка (работает на любом ПК с Docker). Веса и данные НЕ запекаются в образ — монтируются томами (docker-compose.yml).
 #   docker build -t smoking-detection:cpu .
 #   docker run --rm smoking-detection:cpu doctor
-# Другая сборка PyTorch (например, CUDA): --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu124 (и --gpus all при запуске).
+# Другая сборка PyTorch (например, CUDA): --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu126 (и --gpus all при запуске).
 FROM python:3.13-slim
 
 ENV PYTHONUNBUFFERED=1 PYTHONUTF8=1 LANG=C.UTF-8 LC_ALL=C.UTF-8 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \

@@ -39,7 +39,7 @@ docker compose run --rm cli recognize … --vlm qwen3.5:2b-q4_K_M --vlm-mode gre
 
 ## Ускорители
 * **Intel iGPU (OpenVINO GPU)** в контейнере на Windows/Mac недоступна (виртуальная машина без проброса); на Linux-хосте: `--device /dev/dri` и пакеты Intel compute-runtime в образе (в базовый образ не включены). Без ускорителя OpenVINO работает на CPU — эмбеддинги/поза медленнее, чем на iGPU в 3–10 раз.
-* **NVIDIA:** готовая надстройка `docker-compose.gpu.yml` (сборка с CUDA-PyTorch cu124, `SD_TORCH_DEVICE=cuda`, резервирование GPU): `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build ui`; на хосте — драйвер и NVIDIA Container Toolkit (Docker Desktop: WSL2 с GPU). Профиль для такой машины — `laptop_gpu4` (не измерен на ПК автора). Сборка образов НЕ проверялась (на машине автора демон Docker выключен); проверено только `docker compose config`.
+* **NVIDIA:** готовая надстройка `docker-compose.gpu.yml` (сборка с CUDA-PyTorch cu126, `SD_TORCH_DEVICE=cuda`, резервирование GPU): `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build ui`; на хосте — драйвер и NVIDIA Container Toolkit (Docker Desktop: WSL2 с GPU). Профиль для такой машины — `laptop_gpu4` (не измерен на ПК автора). Сборка образов НЕ проверялась (на машине автора демон Docker выключен); проверено только `docker compose config`.
 * **Всё делается в вебе:** страницы «Задачи» (проверка окружения, загрузка весов, признаки, оценки, лестница), «Классификатор», «Модели» — консоль внутри контейнера не нужна.
 * Потоки: `SD_THREADS` (по умолчанию 2). Память: на слабой машине задайте `mem_limit` сервиса, чтобы контейнер не вытеснил систему в своп; для Docker Desktop (WSL2) ограничьте `memory=` в `%UserProfile%\.wslconfig`.
 

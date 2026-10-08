@@ -2,13 +2,13 @@
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build ui
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm cli doctor      # в отчёте должно быть «torch cuda: True»
 # Дальше в вебе: «Модели» → профиль laptop_gpu4; «Задачи» → «Лестница вычислений» с конфигурациями gpu_s1600,gpu_m1600 — убедиться, что поза находит затяжки, и только потом оценивать.
-# Образ собирается с CUDA-сборкой PyTorch (cu124), поза и детекторы предмета работают на видеокарте, CLIP — через SD_TORCH_DEVICE=cuda. RTMPose остаётся на CPU (onnxruntime без CUDA): это мелкая модель.
+# Образ собирается с CUDA-сборкой PyTorch (cu126), поза и детекторы предмета работают на видеокарте, CLIP — через SD_TORCH_DEVICE=cuda. RTMPose остаётся на CPU (onnxruntime без CUDA): это мелкая модель.
 x-sd-gpu: &sd-gpu
   image: smoking-detection:gpu
   build:
     context: .
     args:
-      TORCH_INDEX: https://download.pytorch.org/whl/cu124
+      TORCH_INDEX: https://download.pytorch.org/whl/cu126
   environment:
     SD_OLLAMA_URL: http://ollama:11434
     SD_THREADS: ${SD_THREADS:-4}
