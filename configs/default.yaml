@@ -31,6 +31,7 @@ pose:
     imgsz: 320               # method=yolo: размер кропа
     pad: 0.25                # method=yolo: запас вокруг рамки
     kp_conf_min: 0.30        # method=rtmpose-*: порог видимости (у RTMPose шкала уверенности иная, чем у YOLO)
+    device: cpu              # method=rtmpose-*: onnxruntime cpu | cuda (cuda нужен onnxruntime-gpu; нет — тихо остаётся cpu)
 
 tracking:
   tracker: botsort           # botsort | bytetrack
@@ -84,6 +85,7 @@ evidence:                    # прямой признак: сигарета/в�
   detectors: [smoking_yolo26s_basant18, smoking_yolo11m_beehzod]
   imgsz: 320
   conf: 0.15
+  device: cpu                # cpu | 0 / cuda:0 (YOLO-детекторы предмета на кропах)
   crop_scale: 1.2            # сторона кропа в ширинах плеч
   crop_min_px: 48
   crop_pad_frames_sec: 0.5   # кадры AT_MOUTH ± 0.5 с

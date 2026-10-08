@@ -84,3 +84,14 @@ def test_class_auc_without_two_classes_is_nan_not_an_error():
     clips = pd.DataFrame([dict(video="a", cls="smoke", label="smoking")])
     r = C.class_auc(clips, pd.DataFrame([dict(video="a", cls="smoke", score=0.5)]))
     assert np.isnan(r["clip_auc"]) and r["per_class"] == []
+
+
+def test_summarize_reports_reach_and_wrist_confidence_when_available():
+    df = pd.DataFrame([
+        dict(video="a", cls="smoke", label="smoking", cycles=0, events=0, person_min=0.1, h_med=200.0, d_min_track=0.5, wrist_conf=0.6),
+        dict(video="b", cls="smoke", label="smoking", cycles=0, events=0, person_min=0.1, h_med=200.0, d_min_track=1.2, wrist_conf=0.4),
+        dict(video="c", cls="smoke", label="smoking", cycles=1, events=0, person_min=0.1, h_med=200.0, d_min_track=0.9, wrist_conf=0.8),
+    ])
+    s = C.summarize(df, th_in=0.65).set_index("cls")
+    assert abs(s.loc["smoke", "reach_th_in"] - 1 / 3) < 1e-9 and abs(s.loc["smoke", "wrist_conf_med"] - 0.6) < 1e-9
+    assert "reach_th_in" not in C.summarize(df.drop(columns=["d_min_track", "wrist_conf"])).columns        # без диагностики колонок нет

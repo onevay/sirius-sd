@@ -54,3 +54,13 @@ def test_score_works_when_extra_or_missing_nonrequired_columns_present(tmp_path)
     b = B.Bundle(tmp_path / "b")
     Z = X.assign(extra=1.0)
     assert np.allclose(b.score(Z), b.score(X))
+
+
+def test_uncalibrated_bundle_scores_equal_member_mean(tmp_path):
+    """Без калибровки оценка пакета = среднее членов (как в out-of-fold): пороги, подобранные по oof-оценкам, переносятся без пересчёта шкалы."""
+    X, y, g = _data()
+    man = B.train_bundle(X, y, g, SPEC, tmp_path / "b", n_splits=4, repeats=1, calibrate=False)
+    assert man["calibrated"] is False and man["cv"]["auc_ensemble_calibrated"] is None
+    assert not (tmp_path / "b" / "isotonic.json").exists()
+    b = B.Bundle(tmp_path / "b")
+    assert b.iso is None and np.allclose(b.score(X), b.score_members(X).mean(axis=1))

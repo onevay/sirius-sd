@@ -22,13 +22,17 @@ POSE = ["p_wm_dx", "p_wm_dy", "p_wm_dist", "p_em_dx", "p_em_dy", "p_es_dx", "p_e
 OBJ = ["obj_any_max_conf", "obj_any_hit_frames"]
 VIDEO = ["videomae_smoke_share", "videomae_smoke_minus_drink", "videomae_k_smoking", "xclip_smoke_or_vape", "xclip_smoke_logit"]
 VLM = ["vlm_yesno"]
-PHOTO = ["photo_zs_mean", "photo_zs_max", "photo_p_mean", "photo_p_max"]
+PHOTO = ["photo_zs_mean", "photo_zs_max", "photo_p_mean", "photo_p_max", "photo_zsd_mean", "photo_zsd_max"]
 SMALL = ["hold", "dur", "mouth_dur", "obj_any_max_conf", "p_wm_dist", "p_elbow_peak"]      # короткий список для линейной модели: по одному смыслу на сигнал
 CONFOUNDS = {"track_len", "edge_dist", "overlap_iou", "brightness", "t_peak_in_track", "cycle_index", "cycle_count_track"}
 
 SETS = {
     "fast": KIN + RHYTHM + POSE,                              # миллисекунды на цикл: только поза и время; детекторов и моделей нет
     "fast+vlm": KIN + RHYTHM + POSE + VLM,                    # + VLM (≈ 9 с на цикл): пакет для серой зоны без дорогого детектора предмета
+    "obj_hold": OBJ + ["hold", "dur"],                         # короткая модель: предмет + длительность паузы/цикла (на ~100–200 циклах длинные списки признаков переобучаются)
+    "obj_hold_zsd": OBJ + ["hold", "dur", "photo_zsd_mean", "photo_zsd_max"],   # MVP: предмет + пауза + zero-shot CLIP «курение против питья/телефона» по кропам рта (без VLM)
+    "obj_hold_zsd_vlm": OBJ + ["hold", "dur", "photo_zsd_mean", "photo_zsd_max"] + VLM,   # то же + VLM (≈ 11 с на цикл)
+    "obj_hold_vlm": OBJ + ["hold", "dur"] + VLM,               # + VLM (≈ 9 с на цикл)
     "kin": KIN,
     "kin+rhythm": KIN + RHYTHM,
     "kin+pose": KIN + POSE,
@@ -90,7 +94,7 @@ def compare(tab: pd.DataFrame, sets: dict[str, list[str]] | None = None, repeats
     return pd.DataFrame(rows)
 
 
-def train(tab: pd.DataFrame, set_name: str, out_dir, meta: dict | None = None, repeats: int = 5, kinds=("lr", "gb", "nn")) -> dict:
-    feats = available(SETS[set_name], tab)
+def train(tab: pd.DataFrame, set_name: str, out_dir, meta: dict | None = None, repeats: int = 5, kinds=("lr", "gb", "nn"), calibrate: bool = True, cols: list[str] | None = None) -> dict:
+    feats = available(cols or SETS[set_name], tab)
     spec = members_for(feats, kinds)
-    return B.train_bundle(tab.reset_index(drop=True), tab.y.to_numpy(int), tab.video.to_numpy(), spec, out_dir, meta=dict(feature_set=set_name, **(meta or {})), repeats=repeats)
+    return B.train_bundle(tab.reset_index(drop=True), tab.y.to_numpy(int), tab.video.to_numpy(), spec, out_dir, meta=dict(feature_set=set_name, **(meta or {})), repeats=repeats, calibrate=calibrate)

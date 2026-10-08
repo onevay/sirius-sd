@@ -36,7 +36,7 @@ canvas#tl{width:100%;display:block;background:var(--panel);border:1px solid var(
 <body tabindex="0">
 <div class="grid">
  <div>
-  <div class="vw" id="vw"><video id="v" preload="auto" playsinline></video><canvas id="ov"></canvas></div>
+  <div class="vw" id="vw"><video id="v" preload="metadata" playsinline></video><canvas id="ov"></canvas></div><div id="verr" style="color:#9a9a96;font-size:12px"></div>
   <div class="bar">
    <button id="pp" title="Пробел">▶ / ⏸</button><button id="bk" title="←">◀ кадр</button><button id="fw" title="→">кадр ▶</button>
    <button id="b1" title="Shift+←">−1 с</button><button id="f1" title="Shift+→">+1 с</button>
@@ -70,6 +70,7 @@ let A={intervals:[],tracks:{},duration:0,fps:12,src_w:0,src_h:0,video:null,vkey:
 let draft={id:null,label:'POSITIVE',start:null,end:null,peak:null,person:null,box:null,note:''};
 let sel=null,drag=null,tlDrag=null,speeds=[.1,.25,.5,1,1.5,2,4],si=3,nonce=0,vkey=null,lastIntervals='';
 const $=id=>document.getElementById(id),v=$('v'),ov=$('ov'),ox=ov.getContext('2d'),tl=$('tl'),tx=tl.getContext('2d');
+v.addEventListener('error',()=>{const e=v.error,m=$('verr');m.textContent='Видео не воспроизводится в этом браузере (код '+(e?e.code:'?')+(e&&e.message?': '+e.message:'')+'). ';const u=v.currentSrc||v.src;if(u&&!u.startsWith('data:')){const l=document.createElement('a');l.href=u;l.target='_blank';l.textContent='Открыть файл отдельно';m.appendChild(l)}});
 function post(type,data){window.parent.postMessage(Object.assign({isStreamlitMessage:true,type:type},data||{}),'*')}
 function send(action,payload){post('streamlit:setComponentValue',{value:Object.assign({action:action,nonce:Date.now()+'-'+(++nonce)},payload||{}),dataType:'json'})}
 function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
@@ -167,7 +168,7 @@ window.addEventListener('resize',()=>{sizeOv();sizeTl();fit()});
 window.addEventListener('message',ev=>{const d=ev.data;if(!d||d.type!=='streamlit:render')return;const a=d.args||{};
  if(a.theme){document.documentElement.dataset.theme=a.theme}
  const first=!A.vkey;A=Object.assign({},A,a);
- if(a.video&&a.vkey!==vkey){vkey=a.vkey;v.src=a.video;v.load()}
+ if(a.video&&a.vkey!==vkey){vkey=a.vkey;$('verr').textContent='';v.src=a.video;v.load()}
  else if(!a.video&&a.vkey!==vkey){vkey=a.vkey;v.removeAttribute('src');v.load()}
  const sig=JSON.stringify(A.intervals);if(sig!==lastIntervals){lastIntervals=sig;if(sel&&!A.intervals.find(i=>i.id===sel)){sel=null}list()}
  if(first){renderForm();list();sizeOv();sizeTl()}

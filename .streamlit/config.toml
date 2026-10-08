@@ -1,0 +1,9 @@
+# Настройки веб-интерфейса (читаются, если Streamlit запущен из корня проекта: `sd ui`, Docker, `streamlit run src/sd/ui/app.py`).
+[server]
+headless = true
+fileWatcherType = "none"            # после правок кода интерфейс перезапускают (как и раньше)
+enableStaticServing = true          # видео просмотра и разметки отдаются файлом по HTTP (с перемоткой), а не вшиваются в страницу base64: большие клипы иначе не показываются
+maxMessageSize = 400
+
+[browser]
+gatherUsageStats = false

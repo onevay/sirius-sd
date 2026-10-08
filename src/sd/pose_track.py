@@ -110,6 +110,16 @@ class _Dets:
         return _Dets(self.xyxy[idx], self.conf[idx])
 
 
+def _ort_device(refine: dict) -> str:
+    """Устройство onnxruntime для RTMPose: cuda только если в сборке есть CUDAExecutionProvider, иначе cpu."""
+    want = str(refine.get("device", "cpu")).lower()
+    if want.startswith("cuda"):
+        import onnxruntime as ort
+
+        return "cuda" if "CUDAExecutionProvider" in ort.get_available_providers() else "cpu"
+    return "cpu"
+
+
 class PoseTracker:
     def __init__(self, cfg: dict, proc_fps: float, frame_hw: tuple[int, int]):
         self.cfg, self.proc_fps, self.frame_hw = cfg, proc_fps, frame_hw
@@ -154,7 +164,7 @@ class PoseTracker:
             if method.startswith("rtmpose"):
                 from rtmlib import Body
 
-                self.rtm = Body(mode="lightweight" if method.endswith("s") else "balanced", backend="onnxruntime", device="cpu").pose_model
+                self.rtm = Body(mode="lightweight" if method.endswith("s") else "balanced", backend="onnxruntime", device=_ort_device(pc["refine"])).pose_model
             else:
                 self.refine_model, self.refine_imgsz, self.refine_device = self._load_yolo_crop(pc["weights"], pc["refine"]["imgsz"])
 

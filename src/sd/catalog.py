@@ -11,7 +11,7 @@ from . import models as M
 from . import model_tools as MT
 
 REFINE_METHODS = ("rtmpose-s", "rtmpose-m", "yolo")
-RUNTIMES = {"torch": ["cpu"], "openvino": ["intel:gpu", "intel:cpu"]}
+RUNTIMES = {"torch": ["cpu", "cuda:0"], "openvino": ["intel:gpu", "intel:cpu"]}
 TRACKERS = ("botsort", "bytetrack")
 VLM_MODES = ("off", "grey", "all")
 

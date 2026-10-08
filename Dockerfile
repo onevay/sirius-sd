@@ -25,6 +25,7 @@ RUN pip install torch==2.7.1 torchvision==0.22.1 --index-url ${TORCH_INDEX} \
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY configs ./configs
+COPY .streamlit ./.streamlit
 # метки и сводки, на которые ссылаются команды по умолчанию (docs/review/*.csv); остальные документы в образ не нужны
 COPY docs/review ./docs/review
 RUN pip install --no-deps -e . && mkdir -p data data_external models outputs labels

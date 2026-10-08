@@ -24,6 +24,8 @@ x-sd-common: &sd-common
     - ./outputs:/app/outputs                    # результаты, кэши позы, прогоны распознавания
     - ./labels:/app/labels                      # ручные метки циклов
     - ./docs/review:/app/docs/review            # метки ассистента/жестов (CSV)
+    - ./configs/experiments:/app/configs/experiments   # профили моделей (создаются и правятся в вебе)
+    - ./configs/classifiers:/app/configs/classifiers   # спецификации классификатора (страница «Классификатор»)
   # ограничьте память под слабый ПК, чтобы контейнер не вытеснил систему в своп: mem_limit: 5g
 
 services:

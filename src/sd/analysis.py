@@ -105,6 +105,7 @@ def photo_all(cycles: pd.DataFrame, bundle_dir: Path, backend: str = "auto", fra
     if zero_shot and "clip" in emb:
         z = PF.zero_shot(emb["clip"], PF.clip_text_embeddings())
         per["zs"] = z["smoke"] - z["none"]
+        per["zsd"] = z["smoke"] - np.maximum(z["drink"], z["phone"])        # «курение» против ближайших жестов-двойников (питьё, телефон)
     df = PV.aggregate(ft, per)
     df["start"] = df.start.round(3)
     out.parent.mkdir(parents=True, exist_ok=True)
