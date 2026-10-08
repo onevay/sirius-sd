@@ -121,6 +121,6 @@ sd.cmd feedback-export
 | `src/sd/realtime/worker.py` | `process_stream`, `run_monitor` (`--watch`), `make_engine` |
 | `src/sd/realtime/feedback.py` | решения оператора → эталон |
 | `src/sd/realtime/demo.py` | демо-тревоги (помечены `demo`) |
-| `src/sd/ui/user_app.py` | приложение оператора |
+| `src/sd/web/` | веб-приложение оператора (`sd app`, без Streamlit) |
 | `src/sd/ui/page_monitor.py` | страница «Мониторинг» в `sd ui` |
 | `tests/test_realtime_*.py`, `tests/rt_helpers.py` | тесты и синтетический человек |

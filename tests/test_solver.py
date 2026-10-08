@@ -111,7 +111,7 @@ def test_architecture_is_detected_from_profile_and_bundle(env):
     assert a["mode"] == "classifier+fusion+evidence+photo+vlm" and [s["id"] for s in a["stages"]] == ["pose_track", "cycle_fsm", "cycle_classifier", "evidence", "photo", "vlm", "fusion", "events"]
     cl = next(s for s in a["stages"] if s["id"] == "cycle_classifier")["summary"]
     assert cl["n_features"] == 7 and cl["groups"] == {"kinematics": 3, "pose": 1, "object": 2, "photo": 1} and cl["requires"]["objects"] == ["det_a", "det_b"] and cl["members"] == {"lr": "logreg"}
-    assert a["streaming"] == dict(offline=True, replay=False, live=False) and a["resources_estimate"]["peak_gb"] > 2
+    assert a["streaming"] == dict(offline=True, replay=True, live=False) and a["resources_estimate"]["peak_gb"] > 2
     fast = SV.detect_architecture(prof(src))
     assert fast["mode"] == "classifier" and fast["streaming"]["live"] is True and SV.feature_groups(["hold", "obj_x_hit", "vlm_yesno", "xclip_a", "p_q", "photo_p_mean", "zs_x"]).keys() >= {"object", "vlm", "tube", "pose", "photo"}
 

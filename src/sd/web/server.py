@@ -132,19 +132,21 @@ def make_handler(app: WebApp):
                 return self._json(app.alert(int(m.group(1))))
             if p == "/api/journal.csv":
                 return self._send(200, ("﻿" + app.journal_csv()).encode("utf-8"), "text/csv; charset=utf-8", {"Content-Disposition": "attachment; filename=decisions.csv"})
+            if p == "/api/jobs":
+                return self._json(app.jobs_list())
             if m := re.fullmatch(r"/api/job/(\w+)", p):
                 return self._json(app.job(m.group(1)).to_dict())
             if p == "/api/analysis":
                 r = app.latest_analysis(q["video"], q.get("profile"))
                 return self._json(r or dict(trace=None, meta=None))
             if p == "/api/media-status":
-                state, _, err = app.media_for(q["id"])
-                return self._json(dict(state=state, error=err))
+                r = app.media_for(q["id"], q.get("fmt"))
+                return self._json(dict(state=r["state"], error=r["error"], pct=round(r["pct"], 3)))
             if m := re.fullmatch(r"/media/video/(.+)", p):
-                state, path, err = app.media_for(m.group(1))
-                if path is None:
-                    return self._json(dict(state=state, error=err), 202 if state == "preparing" else 500)
-                return self._file(path, "video/mp4" if path.suffix.lower() in (".mp4", ".m4v") else None)
+                r = app.media_for(m.group(1), q.get("fmt"))
+                if r["path"] is None:
+                    return self._json(dict(state=r["state"], error=r["error"], pct=round(r["pct"], 3)), 202 if r["state"] == "preparing" else 500)
+                return self._file(r["path"], r["mime"])
             if m := re.fullmatch(r"/media/alert/(\d+)/(thumb|clip)", p):
                 return self._file(app.artifact(int(m.group(1)), m.group(2)))
             raise NotFound(p)
@@ -161,6 +163,8 @@ def make_handler(app: WebApp):
                         raise ValueError("status ∈ new, confirmed, false, unsure")
                     return self._json(app.review(int(m.group(1)), st, str(body.get("reviewer", ""))[:60], str(body.get("note", ""))[:500]))
                 if p == "/api/analyze":
+                    if body.get("folder"):
+                        return self._json([j.to_dict() for j in app.submit_folder(body["folder"], body["profile"])], 202)
                     return self._json(app.submit(body["video"], body["profile"]).to_dict(), 202)
                 if p == "/api/demo":
                     return self._json(dict(n=app.demo(bool(body.get("clear")))))

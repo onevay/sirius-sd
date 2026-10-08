@@ -111,14 +111,15 @@ class WebApp:
         out = []
         for f in files:
             i = self.info(f)
-            out.append(dict(id=self.fid(f), name=f.name, clip_id=P.video_id(f), analyzed=self.latest_analysis(self.fid(f)) is not None, **i))
+            out.append(dict(id=self.fid(f), name=f.name, clip_id=P.video_id(f), analysis=self.analysis_summary(self.fid(f)), **i))
         return out
 
     def folder_of(self, vid: str) -> str:
         return self.fid(self.resolve(vid).parent)
 
-    def media_for(self, vid: str) -> tuple[str, Path | None, str | None]:
-        return media.playable(self.resolve(vid))
+    def media_for(self, vid: str, fmt: str | None = None) -> dict:
+        p = self.resolve(vid)
+        return media.playable(p, fmt, float(self.info(p).get("duration") or 0.0))
 
     # ------------------------------------------------------------------ камеры (карта)
     def cameras(self) -> list[dict]:
@@ -220,7 +221,7 @@ class WebApp:
                 out.append(dict(name=s["name"], kind="solver", ready=not any(i.level == "error" for i in iss), problems=[i.text for i in iss if i.level == "error"], describe=p.describe()))
             except Exception as e:
                 out.append(dict(name=s["name"], kind="solver", ready=False, problems=[str(e)], describe={}))
-        return out
+        return sorted(out, key=lambda p: (not p["ready"], p["kind"] != "solver", p["name"]))
 
     def _result_dir(self, vid: str, profile: str) -> Path:
         return self.out / "analysis" / hashlib.sha1(f"{vid}|{profile}".encode()).hexdigest()[:14]
@@ -239,6 +240,27 @@ class WebApp:
                 if meta.get("video") == vid:
                     return dict(trace=t, meta=meta)
         return None
+
+    def analysis_summary(self, vid: str) -> dict | None:
+        """Краткий итог последнего разбора видео (без чтения трассы): {profile, alerts, f1, rt_factor, created}."""
+        base = self.out / "analysis"
+        best = None
+        for d in base.glob("*/meta.json") if base.exists() else []:
+            try:
+                m = json.loads(d.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if m.get("video") == vid and (best is None or m.get("created", "") > best.get("created", "")):
+                best = m
+        if not best:
+            return None
+        return dict(profile=best.get("profile"), alerts=best.get("n_alerts"), f1=(best.get("metrics") or {}).get("f1"), rt_factor=(best.get("stats") or {}).get("rt_factor"), created=best.get("created"))
+
+    def submit_folder(self, folder: str, profile: str) -> list[Job]:
+        return [self.submit(v["id"], profile) for v in self.videos(folder)]
+
+    def jobs_list(self, limit: int = 50) -> list[dict]:
+        return [{k: v for k, v in j.to_dict().items() if k != "alerts"} | dict(n_alerts=len(j.alerts)) for j in sorted(self.jobs.values(), key=lambda j: -j.created)[:limit]]
 
     def submit(self, vid: str, profile: str) -> Job:
         path = self.resolve(vid)
@@ -286,7 +308,7 @@ class WebApp:
             d = self._result_dir(j.video, j.profile)
             d.mkdir(parents=True, exist_ok=True)
             (d / "trace.json").write_text(json.dumps(res.trace, separators=(",", ":")), encoding="utf-8")
-            (d / "meta.json").write_text(json.dumps(dict(video=j.video, profile=j.profile, created=datetime.now().isoformat(timespec="seconds"), stats=res.stats, metrics=res.metrics,
+            (d / "meta.json").write_text(json.dumps(dict(video=j.video, profile=j.profile, created=datetime.now().isoformat(timespec="seconds"), n_alerts=len(res.alerts), stats=res.stats, metrics=res.metrics,
                                                          notes=res.notes), ensure_ascii=False, default=str), encoding="utf-8")
             j.stats, j.metrics, j.notes, j.progress, j.state = res.stats, res.metrics, res.notes, 1.0, "done"
         except Exception as e:

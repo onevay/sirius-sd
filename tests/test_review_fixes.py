@@ -24,7 +24,8 @@ def test_fusion_validation_and_confident_scores():
     assert out[0] > 0.99 and out[1] < 0.01          # опорное значение сигнала — поправки нет, уверенные оценки не сплющиваются
 
 
-def test_fusion_blocked_in_stream():
+def test_fusion_is_applied_in_replay_and_only_warned_in_live():
     p = PR.heuristic_profile()
-    p.options["fusion"] = {"weights": {"vlm": 1.0}}
-    assert not any(i.code == "fusion_stream" for i in SV.check(p, "offline"))
+    p.options["fusion"] = {"weights": {"object": 1.0}}
+    assert not any(i.code.startswith("fusion_") and i.level == "error" for i in SV.check(p, "replay"))
+    assert any(i.code == "fusion_live" and i.level == "warn" for i in SV.check(p, "live"))

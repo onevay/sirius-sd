@@ -1675,14 +1675,7 @@ def feedback_export_cmd() -> None:
 
 @app.command("app", help="Веб-приложение оператора БЕЗ Streamlit: карта с камерами, мультипросмотр, тревоги и решения, просмотр видео с выводами модели. По умолчанию http://127.0.0.1:8502")
 def app_cmd(port: int = 8502, host: Annotated[str, typer.Option(help="адрес привязки; в контейнере 0.0.0.0")] = "127.0.0.1",
-            legacy: Annotated[bool, typer.Option("--legacy", help="старый интерфейс на Streamlit (будет удалён)")] = False,
             open_browser: Annotated[bool, typer.Option("--open/--no-open", help="открыть браузер")] = False) -> None:
-    if legacy:
-        import subprocess
-
-        cmd = [sys.executable, "-m", "streamlit", "run", str(Path(__file__).parent / "ui" / "user_app.py"), "--server.port", str(port), "--server.address", host, "--server.headless", "true",
-               "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false"]
-        raise typer.Exit(subprocess.call(cmd, cwd=str(ROOT)))
     from .web.server import serve
 
     url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '') else host}:{port}"

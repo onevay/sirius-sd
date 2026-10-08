@@ -180,8 +180,10 @@ def check(profile: PR.Profile, mode: str = "offline", devices: bool = False) -> 
         issues.append(Issue("warn", "fusion_and_full", "заданы и fusion, и cycle_bundle_full: VLM будет учтён дважды (каскад и поправка) — оставьте один способ"))
     if o["vlm_model"] and o["vlm_mode"] != "off" and not (spec.active or o["cycle_bundle_full"] or bundle_vlm):
         issues.append(Issue("warn", "vlm_unused", "VLM включён, но его ответы нигде не используются (нет fusion и cycle_bundle_full): считается впустую"))
-    if spec.active and mode in ("replay", "live"):
-        issues.append(Issue("error", "fusion_stream", "fusion пока не применяется в потоке и replay (только offline/eval/sd.run): результат отличался бы от оценки. Отключите fusion или используйте offline"))
+    if spec.active and mode == "live" and (w.get("object", 0) > 0 or w.get("photo", 0) > 0 or w.get("vlm", 0) > 0):
+        issues.append(Issue("warn", "fusion_live", "в настоящем потоке нет признаков предмета, фото-модели и VLM: fusion не изменит оценку (работает в replay и offline)"))
+    if spec.active and mode == "replay" and w.get("vlm", 0) > 0:
+        issues.append(Issue("warn", "fusion_replay_vlm", "VLM в replay не считается: его вес не действует (предмет и фото-модель — действуют)"))
     if mode == "live" and o["vlm_model"] and o["vlm_mode"] != "off":
         issues.append(Issue("warn", "live_vlm", "VLM в настоящем потоке не подключён (нужна асинхронная очередь): будет проигнорирован"))
     return issues

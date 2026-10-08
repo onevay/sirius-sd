@@ -50,7 +50,7 @@ def make_engine(profile: Profile, camera_id: str, process_fps: float | None = No
     cfg = profile.cfg()
     fps = process_fps or float(cfg["video"]["process_fps"])
     o = profile.opts()
-    scorer = (ClassifierScorer(o["cycle_bundle"], cfg, camera_id, objects=o["objects"], photo_bundle=o["photo_bundle"], source_path=source_path, backend=o["backend"])
+    scorer = (ClassifierScorer(o["cycle_bundle"], cfg, camera_id, objects=o["objects"], photo_bundle=o["photo_bundle"], source_path=source_path, backend=o["backend"], fusion=o["fusion"])
               if o.get("cycle_bundle") else HeuristicScorer())
     return StreamEngine(cfg, camera_id, pose_fn or lazy_pose_fn(profile, fps), scorer, keep_frames=keep_frames, source_path=source_path)
 

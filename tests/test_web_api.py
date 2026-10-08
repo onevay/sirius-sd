@@ -100,13 +100,29 @@ def test_camera_chunks_and_video_range_and_transcode(web):
     assert get(base + "/media/video/" + vid, {"Range": "bytes=999999999-"})[0] == 416
 
 
+def test_format_negotiation_vp9_and_direct(web):
+    """Клиент без H.264 просит vp9: перекодируется в webm; готовый webm отдаётся как есть, а для h264 перекодируется в mp4."""
+    app, base = web
+    vid = jget(base + "/api/camera/pavlovsk-01")[1]["chunks"][0]["id"]
+    for _ in range(300):
+        st = jget(base + f"/api/media-status?id={vid}&fmt=vp9")[1]
+        if st["state"] in ("ready", "error"):
+            break
+        time.sleep(0.1)
+    assert st["state"] == "ready", st
+    s, b, h = get(base + f"/media/video/{vid}?fmt=vp9")
+    assert s == 200 and h["Content-Type"] == "video/webm" and b[:4] == b"\x1a\x45\xdf\xa3"          # заголовок EBML/webm
+    assert jget(base + f"/api/media-status?id={vid}&fmt=bogus")[1]["state"] in ("preparing", "ready")        # неизвестный формат → h264
+
+
 def test_folder_listing_and_path_safety(web):
     app, base = web
     fs = jget(base + "/api/folders")[1]
     kinds = {f["name"]: f["kind"] for f in fs}
     assert kinds["gatchina-03-20261009T143000"] == "camera" and kinds["курение"] == "data"
     folder = next(f for f in fs if f["name"] == "курение")
-    assert [v["name"] for v in jget(base + "/api/videos?folder=" + folder["id"])[1]] == ["s1.mp4"]
+    vids = jget(base + "/api/videos?folder=" + folder["id"])[1]
+    assert [v["name"] for v in vids] == ["s1.mp4"] and vids[0]["analysis"] is None
     import base64
     evil = base64.urlsafe_b64encode(b"streams|../../etc").decode().rstrip("=")
     assert get(base + "/api/videos?folder=" + evil)[0] == 404
@@ -160,6 +176,11 @@ def test_analyze_job_lifecycle_with_fake_runner(web):
     r = jget(f"{base}/api/analysis?video={vid}")[1]
     assert r["trace"]["frames"][0][1][0][0] == 1 and r["meta"]["stats"]["rt_factor"] == 2.0
     assert jget(f"{base}/api/analysis?video={vid}&profile=other")[1]["trace"] is None
+    folder = jget(base + "/api/folder-of?video=" + vid)[1]["folder"]
+    summ = jget(base + "/api/videos?folder=" + folder)[1][0]["analysis"]
+    assert summ["profile"] == "p1" and summ["rt_factor"] == 2.0
+    js = post(base + "/api/analyze", {"folder": folder, "profile": "p1"})[1]
+    assert len(js) == 1 and any(x["id"] == js[0]["id"] for x in jget(base + "/api/jobs")[1])
 
 
 def test_real_job_reports_missing_models_as_error(web):

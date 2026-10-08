@@ -24,7 +24,7 @@ class ClassifierScorer:
     name = "classifier"
 
     def __init__(self, bundle_dir: str | Path, cfg: dict, camera_id: str = "cam", *, objects: tuple | list = (), photo_bundle: str | Path | None = None,
-                 source_path: str | Path | None = None, backend: str = "auto", strict: bool = True):
+                 source_path: str | Path | None = None, backend: str = "auto", strict: bool = True, fusion: dict | None = None):
         from ..bundle import Bundle
         from ..paths import repo_path
 
@@ -49,6 +49,9 @@ class ClassifierScorer:
             if self.need_photo and self.photo_bundle is None:
                 raise FeatureUnavailable("классификатору нужна фото-модель (photo_bundle), она не задана")
         self.missing_last: list[str] = []
+        from ..fusion import FusionSpec
+
+        self.fusion = FusionSpec.from_dict(fusion)          # те же поправки, что в offline: в replay работают сигналы предмета и фото-модели
 
     def features(self, cycles: pd.DataFrame, tr, ser: pd.DataFrame) -> pd.DataFrame:
         from ..dataset import build_cycle_table
@@ -86,4 +89,8 @@ class ClassifierScorer:
             return {}
         self.missing_last = self.b.missing(feats)
         sc = self.b.score(feats)
+        if self.fusion.active:
+            from ..fusion import fuse
+
+            sc, _ = fuse(sc, feats, self.fusion)
         return {(int(t), round(float(s), 3)): float(v) for t, s, v in zip(feats.tid, feats.start, sc)}
