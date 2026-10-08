@@ -91,29 +91,61 @@ class Issue:
 MODES = ("offline", "replay", "live")      # offline — прогон файла целиком; replay — имитация потока по файлу (тяжёлые признаки читают исходный файл); live — настоящий поток
 
 
-def check(profile: PR.Profile, mode: str = "offline") -> list[Issue]:
+def _device_issues(profile: PR.Profile) -> list[Issue]:
+    """Устройство из профиля должно существовать на ЭТОЙ машине: профиль, подобранный под другое железо (CUDA на ноутбуке без NVIDIA), иначе роняет каждый клип, а в журнале остаётся F1 = 0."""
+    out: list[Issue] = []
+    try:
+        c = profile.cfg()
+        dev, rt = str(c["pose"]["device"]), str(c["pose"]["runtime"])
+    except Exception:
+        return out
+    if dev.startswith("cuda") or str(c["pose"]["refine"].get("device", "")).startswith("cuda") and c["pose"]["refine"]["enabled"]:
+        try:
+            import torch
+
+            if not torch.cuda.is_available():
+                out.append(Issue("error", "device_cuda", f"профиль «{profile.name}» требует CUDA ({dev}), а на этой машине видеокарты NVIDIA с CUDA нет: возьмите профиль под CPU/OpenVINO "
+                                 "(laptop_cpu, stream_cpu6) или задайте pose.runtime=openvino, pose.device=intel:cpu"))
+        except ImportError:
+            out.append(Issue("error", "device_cuda", "для CUDA нужен torch, он не установлен"))
+    if rt == "openvino" or dev.startswith("intel"):
+        try:
+            import openvino as ov
+
+            have = ov.Core().available_devices
+            want = dev.split(":")[1].upper() if ":" in dev else "CPU"
+            if want not in have and not any(h.startswith(want) for h in have):
+                out.append(Issue("error", "device_openvino", f"устройство OpenVINO {dev} недоступно (есть: {', '.join(have) or 'нет'}): замените на intel:cpu"))
+        except ImportError:
+            out.append(Issue("error", "device_openvino", "рантайм openvino выбран, но пакет не установлен (pip install openvino) — или используйте pose.runtime=torch, pose.device=cpu"))
+        except Exception:
+            pass
+    return out
+
+
+def check(profile: PR.Profile, mode: str = "offline", devices: bool = False) -> list[Issue]:
     """Проверка, что профиль собирает рабочий пайплайн с классификатором. Ошибки (`error`) мешают запуску; предупреждения — нет.
 
     Главное правило: классификатор цикла обязателен; его признаки должны быть обеспечены экстракторами профиля (иначе недостающие признаки молча станут пропусками
     и качество упадёт незаметно); VLM, предмет и фото-модель — надстройка над классификатором через `fusion` или каскад `cycle_bundle_full`, вектор признаков классификатора они не меняют."""
     if mode not in MODES:
         raise ValueError(f"mode ∈ {MODES}")
-    issues: list[Issue] = []
+    issues: list[Issue] = [*_device_issues(profile)] if devices else []
     bundle_vlm = False          # вектор классификатора уже включает ответы VLM (тогда VLM нужен ему самому)
     o = profile.opts()
     problem = profile.classifier_problem()
     if problem:
-        return [Issue("error", "classifier_required", problem)]
+        return issues + [Issue("error", "classifier_required", problem)]
     if not o["cycle_bundle"]:
         issues.append(Issue("warn", "heuristic", "классификатор не выбран, оценка цикла — эвристика (allow_heuristic): только для отладки"))
     else:
         bp = repo_path(o["cycle_bundle"])
         if not (bp / "manifest.json").exists():
-            return [Issue("error", "classifier_missing", f"пакет классификатора не найден: {o['cycle_bundle']} (положите его в models/cycle/ или установите решатель: sd solver install)")]
+            return issues + [Issue("error", "classifier_missing", f"пакет классификатора не найден: {o['cycle_bundle']} (положите его в models/cycle/ или установите решатель: sd solver install)")]
         try:
             d = describe_bundle(o["cycle_bundle"])
         except Exception as e:
-            return [Issue("error", "classifier_broken", f"пакет {o['cycle_bundle']} не читается: {e}")]
+            return issues + [Issue("error", "classifier_broken", f"пакет {o['cycle_bundle']} не читается: {e}")]
         req = d["requires"]
         bundle_vlm = bool(req["vlm"])
         have = set(o["objects"] or [])
@@ -155,8 +187,8 @@ def check(profile: PR.Profile, mode: str = "offline") -> list[Issue]:
     return issues
 
 
-def errors(profile: PR.Profile, mode: str = "offline") -> list[Issue]:
-    return [i for i in check(profile, mode) if i.level == "error"]
+def errors(profile: PR.Profile, mode: str = "offline", devices: bool = False) -> list[Issue]:
+    return [i for i in check(profile, mode, devices) if i.level == "error"]
 
 
 # ------------------------------------------------------------------------------------------ архитектура

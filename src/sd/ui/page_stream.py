@@ -49,7 +49,7 @@ def render() -> None:
     render_v = o[1].checkbox("Видео с рамками и баннером тревоги", False)
     go = o[2].button("Запустить", type="primary", disabled=prof is None)
     if prof is not None:
-        errs = SV.errors(prof, "replay")
+        errs = SV.errors(prof, "replay", devices=True)
         for e in errs:
             st.error(e.text)
         go = go and not errs

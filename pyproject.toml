@@ -26,7 +26,7 @@ sd = "sd.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-sd = ["ui/frontend/**/*"]
+sd = ["ui/frontend/**/*", "web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

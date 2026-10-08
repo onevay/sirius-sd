@@ -174,3 +174,16 @@ def test_roi_filters_predictions_before_scoring(tmp_path):
     fake = Fake({"s1": [(10, 20, 0.9)]})
     out = R.evaluate_dirs([d1], PR.heuristic_profile(), policy="fixed", gt_df=gt, roi_path=roi, recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False, n_boot=10)
     assert out.report.metrics["tp"] == 0 and out.report.metrics["fn"] >= 1
+
+
+def test_all_clips_failed_is_an_error_not_f1_zero(tmp_path):
+    d1, d2 = make_world(tmp_path)
+    gt = _gt(tmp_path, d1, d2)
+
+    def boom(video, start, end, profile):
+        raise RuntimeError("CUDA недоступна")
+
+    with pytest.raises(RuntimeError, match="ни один клип не обработан.*CUDA"):
+        R.evaluate_dirs([d1, d2], PR.heuristic_profile(), mode="events", policy="fixed", gt_df=gt, recognize_fn=boom, probe_fn=probe, cache_root=tmp_path / "c", exp_root=tmp_path / "exp",
+                        n_boot=5)
+    assert XP.list_runs(tmp_path / "exp").empty          # в журнал такой прогон не попадает

@@ -55,6 +55,10 @@ def probe(path: str | Path) -> VideoInfo:
     try:
         fps = float(cap.get(cv2.CAP_PROP_FPS)) or 25.0
         n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if n <= 0 or n > 10_000_000:          # wmv/ts/некоторые mkv не сообщают число кадров (0, -1 или мусор): считаем проходом без декодирования
+            n = 0
+            while cap.grab():
+                n += 1
         return VideoInfo(
             path=str(p),
             width=int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),

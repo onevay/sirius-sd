@@ -169,7 +169,7 @@ def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, classifier: s
     from . import solver as SV
 
     profile = with_classifier(profile, classifier)
-    errs = SV.errors(profile)           # до долгого прогона: нет классификатора, нет нужных экстракторов, неверный fusion
+    errs = SV.errors(profile, devices=recognize_fn is None)           # до долгого прогона: нет классификатора, нет нужных экстракторов, неверный fusion
     if errs:
         raise ValueError("профиль не готов к оценке:\n  - " + "\n  - ".join(e.text for e in errs))
     if role not in ("validation", "hidden"):
@@ -204,6 +204,8 @@ def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, classifier: s
     st = settings or EV.Settings(threshold=prof.threshold, target_f1=target_f1)
     runs = run_clips(videos, prof, window=window, max_sec=max_sec, zones=zones, use_cache=use_cache, recognize_fn=recognize_fn, probe_fn=probe_fn, progress=progress, cache_root=cache_root)
     failed = [r for r in runs if r.error]
+    if save and failed and len(failed) == len(runs):      # ни один клип не обработан: «F1 = 0» в журнале выглядел бы как плохая модель, а это сбой запуска (нет весов, CUDA, битый файл)
+        raise RuntimeError("ни один клип не обработан, прогон не сохранён. Первая ошибка: " + failed[0].error + (f" (всего {len(failed)} клипов с ошибкой)" if len(failed) > 1 else ""))
     if failed:
         notes.append(f"клипов с ошибкой обработки: {len(failed)} (посчитаны как «событий нет»): " + "; ".join(f"{r.clip_id}: {r.error}" for r in failed[:3]))
     gt_end = gt_all.groupby("clip_id").end_sec.max().to_dict() if len(gt_all) else {}

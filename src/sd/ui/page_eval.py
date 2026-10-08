@@ -126,7 +126,7 @@ def render() -> None:
     sel = _data_block(gt)
     st.subheader("2. Модели")
     profiles, cls = _profile_block()
-    problems = [(p.name, i) for p in profiles for i in SV.check(RN.with_classifier(p, cls))]
+    problems = [(p.name, i) for p in profiles for i in SV.check(RN.with_classifier(p, cls), devices=True)]
     for name, i in problems:
         (st.error if i.level == "error" else st.warning)(f"{name}: {i.text}")
     blocked = any(i.level == "error" for _, i in problems)

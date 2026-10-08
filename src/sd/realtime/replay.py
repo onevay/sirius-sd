@@ -46,6 +46,7 @@ class ReplayResult:
     out_dir: str | None = None
     overlay: str | None = None
     notes: list[str] = field(default_factory=list)
+    trace: dict | None = None               # рамки людей по времени + тревоги: браузер рисует их поверх исходного видео (без перекодирования)
 
 
 def _frames(video, start, end, fps) -> Iterator[tuple[np.ndarray, float]]:
@@ -107,6 +108,7 @@ def replay_video(video: str | Path, profile: Profile, *, start: float = 0.0, end
     log: list[dict] = []
     ms: list[float] = []
     n_frames, t_first, t_last = 0, None, None
+    trace_frames: list = []
     writer, overlay_path, active_keys = None, None, set()
 
     def handle(ups: Iterable[AlertUpdate]) -> None:
@@ -150,6 +152,7 @@ def replay_video(video: str | Path, profile: Profile, *, start: float = 0.0, end
             fr = _annotate(img, eng.last_dets, act, gl, t)
             writer.write(fr[: fr.shape[0] - fr.shape[0] % 2, : fr.shape[1] - fr.shape[1] % 2])
         ms.append((time.perf_counter() - t0) * 1000)
+        trace_frames.append([round(t, 3), [[int(tid), *(round(float(v), 1) for v in b)] for tid, b in eng.last_dets]])
         n_frames += 1
         if progress and n_frames % 10 == 0:
             progress(t, end if end is not None else t)
@@ -189,18 +192,23 @@ def replay_video(video: str | Path, profile: Profile, *, start: float = 0.0, end
                        alert_delay_max=float(np.max(delays)) if delays else None, n_gt=report.metrics["n_gt"])
     elif gt is not None:
         notes.append("в эталоне нет разметки этого клипа: метрики не считаются")
+    trace = dict(clip_id=cid, fps=fps, frame_hw=list(eng.frame_hw) if eng.frame_hw else None, frames=trace_frames,
+                 alerts=[dict(tid=int(r.tid), start=float(r.start), end=float(r.end), t_open=float(r.t_open), confidence=float(r.confidence), explain=str(r.explain), delay=float(r.delay))
+                         for r in alerts.itertuples()],
+                 gt=[dict(start=float(g.start_sec), end=float(g.end_sec)) for g in (gt_pos.itertuples() if gt_pos is not None else [])])
     out_dir = None
     if save:
         out_base = out_root or REPLAY_DIR
         out_dir = Path(overlay_path.parent) if overlay_path else out_base / f"{time.strftime('%Y%m%d_%H%M%S')}_{cid}"
         out_dir.mkdir(parents=True, exist_ok=True)
         events.to_csv(out_dir / "events.csv", index=False)
+        (out_dir / "trace.json").write_text(json.dumps(trace, separators=(",", ":")), encoding="utf-8")
         alerts.to_csv(out_dir / "alerts.csv", index=False, encoding="utf-8-sig")
         pd.DataFrame(log).to_csv(out_dir / "log.csv", index=False, encoding="utf-8-sig")
         (out_dir / "summary.json").write_text(json.dumps(dict(video=str(video), clip_id=cid, profile=profile.name, fingerprint=profile.fingerprint(), window=[start, end], stats=stats, metrics=metrics,
                                                               notes=notes), ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     return ReplayResult(str(video), cid, profile.name, (start, end), alerts, events, pd.DataFrame(log), stats, metrics, report, str(out_dir) if out_dir else None,
-                        str(overlay_path) if overlay_path and overlay_path.exists() else None, notes)
+                        str(overlay_path) if overlay_path and overlay_path.exists() else None, notes, trace)
 
 
 def _verdict(s: dict) -> str:

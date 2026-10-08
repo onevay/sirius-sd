@@ -1636,7 +1636,7 @@ def monitor_cmd(streams: Annotated[Optional[Path], typer.Option(help="катал
     from .realtime.worker import run_monitor
 
     prof = RN.with_classifier(SV.resolve_profile(solver) if solver else (PR.load(profile) if profile else PR.default_profile()), classifier)
-    errs = SV.errors(prof, "live")
+    errs = SV.errors(prof, "live", devices=True)
     if errs:
         for e in errs:
             console.print(f"[red]{e.text}[/]")
@@ -1673,15 +1673,25 @@ def feedback_export_cmd() -> None:
     console.print(export_reviewed(AlertStore()))
 
 
-@app.command("app", help="Интерфейс оператора (мониторинг): дашборд тревог, подтверждение, камеры, журнал. Отдельно от `sd ui` (инструменты разработчика). По умолчанию http://localhost:8502")
-def app_cmd(port: int = 8502, headless: bool = True, host: Annotated[str, typer.Option(help="адрес привязки; в контейнере 0.0.0.0")] = "127.0.0.1") -> None:
-    import subprocess
+@app.command("app", help="Веб-приложение оператора БЕЗ Streamlit: карта с камерами, мультипросмотр, тревоги и решения, просмотр видео с выводами модели. По умолчанию http://127.0.0.1:8502")
+def app_cmd(port: int = 8502, host: Annotated[str, typer.Option(help="адрес привязки; в контейнере 0.0.0.0")] = "127.0.0.1",
+            legacy: Annotated[bool, typer.Option("--legacy", help="старый интерфейс на Streamlit (будет удалён)")] = False,
+            open_browser: Annotated[bool, typer.Option("--open/--no-open", help="открыть браузер")] = False) -> None:
+    if legacy:
+        import subprocess
 
-    app_py = Path(__file__).parent / "ui" / "user_app.py"
-    cmd = [sys.executable, "-m", "streamlit", "run", str(app_py), "--server.port", str(port), "--server.address", host, "--server.headless", str(headless).lower(),
-           "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false"]
-    console.print("запуск:", " ".join(cmd))
-    raise typer.Exit(subprocess.call(cmd, cwd=str(ROOT)))
+        cmd = [sys.executable, "-m", "streamlit", "run", str(Path(__file__).parent / "ui" / "user_app.py"), "--server.port", str(port), "--server.address", host, "--server.headless", "true",
+               "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false"]
+        raise typer.Exit(subprocess.call(cmd, cwd=str(ROOT)))
+    from .web.server import serve
+
+    url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '') else host}:{port}"
+    console.print(f"веб-приложение: [bold]{url}[/]  (Ctrl+C — остановить)")
+    if open_browser:
+        import webbrowser
+
+        webbrowser.open(url)
+    serve(host=host, port=port)
 
 
 @app.command("replay", help="Имитация реального времени по видео: файл идёт через потоковый движок кадр за кадром, тревоги печатаются в момент срабатывания. "
@@ -1699,7 +1709,7 @@ def replay_cmd(video: VideoArg, profile: Annotated[Optional[str], typer.Option("
     from .realtime import replay as RP
 
     prof = RN.with_classifier(SV.resolve_profile(solver) if solver else (PR.load(profile) if profile else PR.default_profile()), classifier)
-    errs = SV.errors(prof, "replay")
+    errs = SV.errors(prof, "replay", devices=True)
     if errs:
         for e in errs:
             console.print(f"[red]{e.text}[/]")

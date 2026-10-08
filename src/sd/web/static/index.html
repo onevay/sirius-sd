@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Мониторинг камер</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dot"></span>Мониторинг</div>
+  <nav id="nav">
+    <a href="#/map" data-r="map">Карта</a>
+    <a href="#/alerts" data-r="alerts">Тревоги <b id="pendingBadge" class="badge hidden">0</b></a>
+    <a href="#/video" data-r="video">Просмотр моделью</a>
+    <a href="#/cameras" data-r="cameras">Камеры</a>
+    <a href="#/journal" data-r="journal">Журнал</a>
+  </nav>
+  <div class="grow"></div>
+  <input id="operator" placeholder="Оператор" aria-label="Имя оператора">
+</header>
+<main id="view"></main>
+<div id="toast" class="toast hidden" role="status"></div>
+<script src="/app.js"></script>
+</body>
+</html>

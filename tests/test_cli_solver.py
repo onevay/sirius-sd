@@ -56,7 +56,8 @@ def test_pack_can_override_classifier(home):
     assert SV.inspect(out_zip)["meta"]["profile"]["options"]["cycle_bundle"] == "models/cycle/fast9"
 
 
-def test_eval_refuses_without_classifier_and_accepts_override(home):
+def test_eval_refuses_without_classifier_and_accepts_override(home, monkeypatch):
+    monkeypatch.setattr(SV, "_device_issues", lambda p: [])          # устройства тестовой машины не важны
     d = home / "курение"
     d.mkdir()
     code, out = run("eval", "-d", str(d), "-p", "nocls")

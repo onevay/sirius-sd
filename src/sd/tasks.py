@@ -116,8 +116,10 @@ def _alive(pid: int | None) -> bool:
         return False
     try:
         if os.name == "nt":
-            r = subprocess.run(["tasklist", "/FI", f"PID eq {int(pid)}", "/NH", "/FO", "CSV"], capture_output=True, text=True)
-            return any(len(p) > 1 and p[1].strip('"') == str(int(pid)) for p in (ln.split('","') for ln in r.stdout.splitlines()))
+            # tasklist пишет в кодовой странице консоли (cp866/cp1251): text=True ломает чтение потока, и stdout становится None → читаем байты и декодируем с заменой
+            r = subprocess.run(["tasklist", "/FI", f"PID eq {int(pid)}", "/NH", "/FO", "CSV"], capture_output=True)
+            out = (r.stdout or b"").decode("utf-8", "replace")
+            return any(len(p) > 1 and p[1].strip('"') == str(int(pid)) for p in (ln.split('","') for ln in out.splitlines()))
         os.kill(int(pid), 0)
         return True
     except (OSError, ValueError):
@@ -179,7 +181,7 @@ def list_tasks(root: Path | None = None, limit: int = 30) -> list[dict]:
     for d in sorted((x for x in r.iterdir() if (x / "task.json").exists()), reverse=True)[:limit]:
         try:
             out.append(status(d.name, r))
-        except (OSError, ValueError):
+        except Exception:      # одна битая запись не должна ронять страницу «Задачи»
             continue
     return out
 
