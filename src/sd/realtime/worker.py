@@ -37,12 +37,22 @@ def lazy_pose_fn(profile: Profile, process_fps: float):
     return fn
 
 
-def make_engine(profile: Profile, camera_id: str, process_fps: float | None = None, pose_fn=None, keep_frames: bool = True) -> StreamEngine:
+def make_engine(profile: Profile, camera_id: str, process_fps: float | None = None, pose_fn=None, keep_frames: bool = True, *, mode: str = "live",
+                source_path: str | Path | None = None) -> StreamEngine:
+    """Движок камеры. Классификатор цикла обязателен (`solver.check`): без него или с признаками, которых в этом режиме нет, — `ValueError`, а не тихая эвристика.
+    `mode='replay'` + `source_path` — имитация потока по файлу: предмет и фото-модель читаются из исходного файла."""
+    from ..solver import errors
+    from .scoring import ClassifierScorer
+
+    errs = errors(profile, mode)
+    if errs:
+        raise ValueError("\n".join(e.text for e in errs))
     cfg = profile.cfg()
     fps = process_fps or float(cfg["video"]["process_fps"])
     o = profile.opts()
-    scorer = BundleScorer(o["cycle_bundle"], cfg, camera_id) if o.get("cycle_bundle") else HeuristicScorer()
-    return StreamEngine(cfg, camera_id, pose_fn or lazy_pose_fn(profile, fps), scorer, keep_frames=keep_frames)
+    scorer = (ClassifierScorer(o["cycle_bundle"], cfg, camera_id, objects=o["objects"], photo_bundle=o["photo_bundle"], source_path=source_path, backend=o["backend"])
+              if o.get("cycle_bundle") else HeuristicScorer())
+    return StreamEngine(cfg, camera_id, pose_fn or lazy_pose_fn(profile, fps), scorer, keep_frames=keep_frames, source_path=source_path)
 
 
 @dataclass

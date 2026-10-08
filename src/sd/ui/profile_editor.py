@@ -71,7 +71,8 @@ def _all_params(base: Profile, conf: dict, k: str) -> dict:
     return {a: b for a, b in over.items() if b != cur.get(a)}
 
 
-def editor(base: Profile, key: str = "pe") -> Profile:
+def editor(base: Profile, key: str = "pe", classifier: str | None = None) -> Profile:
+    """`classifier` — выбранный снаружи классификатор цикла (страница «Оценка»): тогда выбор здесь не показывается, чтобы не было двух источников правды."""
     cfg, o = base.cfg(), base.opts()
     k = f"{key}_{base.name}_"
     conf = dict(base.config)
@@ -97,7 +98,15 @@ def editor(base: Profile, key: str = "pe") -> Profile:
 
     st.markdown("**Оценка цикла и дополнительные модели**")
     cyc = [b.id for b in CAT.cycle_bundles()]
-    cb = _pick("Классификатор цикла", [NONE, *cyc], o["cycle_bundle"] or NONE, k + "cb", fmt=lambda p: Path(p).name if p != NONE else "эвристика по длительности паузы")
+    allow_heur = bool(o["allow_heuristic"])
+    if classifier:
+        cb = classifier
+    elif cyc or o["cycle_bundle"]:
+        cb = _pick("Классификатор цикла (обязателен)", cyc, o["cycle_bundle"], k + "cb", fmt=lambda p: Path(p).name)
+    else:
+        st.error("В models/cycle/ нет ни одного классификатора цикла: обучите (`sd train-bundle`) или установите решатель (`sd solver install`).")
+        cb = NONE
+        allow_heur = st.checkbox("Разрешить эвристику по длительности паузы (только отладка)", value=allow_heur, key=k + "heur")
     pho = [b.id for b in CAT.photo_bundles()]
     pb = _pick("Фото-модель (признаки)", [NONE, *pho], o["photo_bundle"] or NONE, k + "pb", fmt=lambda p: Path(p).name if p != NONE else NONE)
     dets = [d.id for d in CAT.detector_models()]
@@ -110,8 +119,14 @@ def editor(base: Profile, key: str = "pe") -> Profile:
     vmode = st.radio("Режим VLM", ["grey", "all"], index=0 if o["vlm_mode"] != "all" else 1, horizontal=True, key=k + "vmode", disabled=vm == NONE,
                      format_func=lambda m: {"grey": "серая зона", "all": "все циклы"}[m])
     grey = st.slider("Серая зона оценки цикла", 0.0, 1.0, tuple(o["grey"]), 0.05, key=k + "grey", disabled=vm == NONE or vmode == "all")
+    with st.expander("Слияние сигналов с оценкой классификатора (VLM, предмет, фото-модель)"):
+        st.caption("Поправка к логиту оценки классификатора; вектор признаков классификатора не меняется. Вес 0 — выключено. Подбирайте на валидации («Эксперименты» → «Варианты профиля», ключ fusion).")
+        fz = dict((o["fusion"] or {}).get("weights", {}))
+        fw = {n: st.slider(lbl, 0.0, 2.0, float(fz.get(n, 0.0)), 0.1, key=k + "fz" + n) for n, lbl in (("vlm", "вес VLM"), ("object", "вес предмета"), ("photo", "вес фото-модели"))}
+        fclip = st.slider("Максимум поправки, логиты", 0.5, 4.0, float((o["fusion"] or {}).get("clip_logit", 2.0)), 0.1, key=k + "fzclip")
     opt.update(cycle_bundle=None if cb == NONE else cb, photo_bundle=None if pb == NONE else pb, objects=list(objs), vlm_model=None if vm == NONE else vm,
-               vlm_mode=vmode if vm != NONE else "off", grey=[float(grey[0]), float(grey[1])])
+               vlm_mode=vmode if vm != NONE else "off", grey=[float(grey[0]), float(grey[1])], allow_heuristic=allow_heur,
+               fusion=dict(weights={n: w for n, w in fw.items() if w > 0}, clip_logit=float(fclip)) if any(w > 0 for w in fw.values()) else None)
 
     st.markdown("**Пороги**")
     th = st.slider("Порог confidence события (фиксируется до скрытого набора)", 0.0, 1.0, float(cfg["events"]["confidence_threshold"]), 0.01, key=k + "th")

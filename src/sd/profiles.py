@@ -28,11 +28,13 @@ from typing import Any
 import yaml
 
 from .config import Cfg, load_config, stable_hash
-from .paths import CONFIGS, ROOT
+from .paths import CONFIGS, ROOT, repo_path
 
 EXPERIMENTS_DIR = CONFIGS / "experiments"
-OPTION_KEYS = ("cycle_bundle", "cycle_bundle_full", "photo_bundle", "objects", "vlm_model", "vlm_mode", "grey", "backend")
-DEFAULT_OPTIONS: dict[str, Any] = dict(cycle_bundle=None, cycle_bundle_full=None, photo_bundle=None, objects=[], vlm_model=None, vlm_mode="off", grey=[0.3, 0.8], backend="auto")
+OPTION_KEYS = ("cycle_bundle", "cycle_bundle_full", "photo_bundle", "objects", "vlm_model", "vlm_mode", "grey", "backend", "fusion", "allow_heuristic")
+DEFAULT_OPTIONS: dict[str, Any] = dict(cycle_bundle=None, cycle_bundle_full=None, photo_bundle=None, objects=[], vlm_model=None, vlm_mode="off", grey=[0.3, 0.8], backend="auto",
+                                       fusion=None, allow_heuristic=False)
+_FP_OMIT_IF_DEFAULT = ("fusion", "allow_heuristic")      # новые опции не меняют отпечаток профилей, которые их не используют (кэш прогонов остаётся годным)
 
 
 @dataclass
@@ -61,7 +63,16 @@ class Profile:
 
         o = self.opts()
         return Options(cycle_bundle=o["cycle_bundle"], cycle_bundle_full=o["cycle_bundle_full"], photo_bundle=o["photo_bundle"], objects=tuple(o["objects"] or ()),
-                       vlm_model=o["vlm_model"], vlm_mode=o["vlm_mode"] if o["vlm_model"] else "off", grey=tuple(o["grey"]), render=render, camera_id=camera_id, backend=o["backend"])
+                       vlm_model=o["vlm_model"], vlm_mode=o["vlm_mode"] if o["vlm_model"] else "off", grey=tuple(o["grey"]), render=render, camera_id=camera_id, backend=o["backend"],
+                       fusion=o["fusion"], allow_heuristic=bool(o["allow_heuristic"]))
+
+    def classifier_problem(self) -> str | None:
+        """Текст проблемы, если у профиля нет классификатора цикла (а он обязателен), иначе None. Эвристика по длительности паузы допускается только явным `allow_heuristic: true`."""
+        o = self.opts()
+        if o["cycle_bundle"] or o["allow_heuristic"]:
+            return None
+        return (f"профиль «{self.name}»: не выбран классификатор цикла (options.cycle_bundle). Классификатор обязателен: без него оценка цикла — эвристика по длительности паузы, "
+                "она не отличает питьё и телефон от курения. Выберите пакет из models/cycle/ (или явно разрешите эвристику для отладки: options.allow_heuristic: true)")
 
     @property
     def threshold(self) -> float:
@@ -73,7 +84,11 @@ class Profile:
         cfg = {k: v for k, v in self.cfg().to_dict().items()}
         cfg.get("events", {}).pop("confidence_threshold", None)
         o = self.opts()
-        ident = dict(cfg=cfg, options=o, weights=_weights_identity(cfg, o))
+        o_fp = {k: v for k, v in o.items() if not (k in _FP_OMIT_IF_DEFAULT and v == DEFAULT_OPTIONS[k])}
+        for k in ("cycle_bundle", "cycle_bundle_full", "photo_bundle"):      # путь к пакету зависит от машины; идентичность — имя + sha256 содержимого (в weights)
+            if o_fp.get(k):
+                o_fp[k] = Path(o_fp[k]).name
+        ident = dict(cfg=cfg, options=o_fp, weights=_weights_identity(cfg, o))
         return stable_hash(ident, 10)
 
     def describe(self) -> dict[str, Any]:
@@ -82,7 +97,8 @@ class Profile:
         return dict(pose=c["pose"]["weights"], refine=(c["pose"]["refine"]["method"] if c["pose"]["refine"]["enabled"] else "—"), runtime=f"{c['pose']['runtime']}/{c['pose']['device']}",
                     imgsz=c["pose"]["imgsz"], tracker=c["tracking"]["tracker"], fps=c["video"]["process_fps"], cycle_model=Path(o["cycle_bundle"]).name if o["cycle_bundle"] else "эвристика",
                     photo=Path(o["photo_bundle"]).name if o["photo_bundle"] else "—", objects=",".join(o["objects"]) or "—",
-                    vlm=(f"{o['vlm_model']} ({o['vlm_mode']})" if o["vlm_model"] and o["vlm_mode"] != "off" else "—"), threshold=c["events"]["confidence_threshold"])
+                    vlm=(f"{o['vlm_model']} ({o['vlm_mode']})" if o["vlm_model"] and o["vlm_mode"] != "off" else "—"), threshold=c["events"]["confidence_threshold"],
+                    fusion=(", ".join(f"{k}×{v:g}" for k, v in (o["fusion"] or {}).get("weights", {}).items() if v) or "—"))
 
     # ---------------------------------------------------------------- файл
     def to_dict(self) -> dict:
@@ -90,8 +106,7 @@ class Profile:
 
 
 def _abs(p: str | Path) -> Path:
-    p = Path(p)
-    return p if p.is_absolute() else ROOT / p
+    return repo_path(p)
 
 
 def _sha_path(p: Path) -> str | None:
@@ -154,6 +169,11 @@ def delete(name: str, directory: Path | None = None) -> bool:
         f.unlink()
         return True
     return False
+
+
+def heuristic_profile() -> Profile:
+    """Отладочная база БЕЗ классификатора (оценка цикла — эвристика по длительности паузы). Явная, поэтому не может появиться «случайно»; для оценки качества не годится."""
+    return Profile(name="heuristic", description="только для отладки: эвристика по длительности паузы вместо классификатора", options=dict(allow_heuristic=True))
 
 
 def default_profile() -> Profile:

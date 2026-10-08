@@ -29,8 +29,10 @@ app.add_typer(models_app, name="models")
 ollama_app = typer.Typer(no_args_is_help=True, help="Локальный Ollama для VLM: сервер только на 127.0.0.1 и без облака, статус, загрузка моделей.")
 app.add_typer(ollama_app, name="ollama")
 from .cli_photos import photos_app  # noqa: E402
+from .cli_solver import solver_app  # noqa: E402
 
 app.add_typer(photos_app, name="photos")
+app.add_typer(solver_app, name="solver")
 import shutil as _shutil
 
 # при перенаправлении вывода rich берёт ширину 80 и ломает таблицы — задаём разумный минимум
@@ -1561,15 +1563,22 @@ def eval_cmd(dirs: Annotated[list[Path], typer.Option("--dir", "-d", help="па�
              target_f1: Annotated[float, typer.Option(help="целевая Event F1")] = 0.80,
              max_sec: Annotated[Optional[float], typer.Option(help="только первые N секунд каждого клипа")] = None,
              roi: Annotated[Optional[Path], typer.Option(help="roi.json")] = None,
+             solver: Annotated[Optional[Path], typer.Option(help="оценить установленный/упакованный решатель (*.sdsolver.zip или каталог) вместо профиля")] = None,
+             classifier: Annotated[Optional[str], typer.Option(help="классификатор цикла (models/cycle/<имя>); подменяет выбранный в профиле. ОБЯЗАТЕЛЕН: без него оценка не запускается")] = None,
              no_cache: Annotated[bool, typer.Option("--no-cache")] = False) -> None:
     from . import profiles as PR
     from . import runner as RN
+    from . import solver as SV
 
-    profs = [PR.load(p) for p in profile] if profile else [PR.default_profile()]
+    profs = [SV.resolve_profile(solver)] if solver else ([PR.load(p) for p in profile] if profile else [PR.default_profile()])
     rows = []
     for p in profs:
-        out = RN.evaluate_dirs([str(d) for d in dirs], p, mode=mode, role=role, policy="fixed" if role == "hidden" else policy, target_f1=target_f1, use_cache=not no_cache,
-                               max_sec=max_sec, roi_path=str(roi) if roi else None, progress=lambda i, n, m: console.print(f"  [{i}/{n}] {m}"))
+        try:
+            out = RN.evaluate_dirs([str(d) for d in dirs], p, classifier=classifier, mode=mode, role=role, policy="fixed" if role == "hidden" else policy, target_f1=target_f1,
+                                   use_cache=not no_cache, max_sec=max_sec, roi_path=str(roi) if roi else None, progress=lambda i, n, m: console.print(f"  [{i}/{n}] {m}"))
+        except ValueError as e:
+            console.print(f"[red]{p.name}: {e}[/]")
+            raise typer.Exit(1)
         m, b, ci = out.report.metrics, out.report.budget, out.report.ci.get("f1") or (None, None)
         rows.append([p.name, f"{m['f1']:.3f}", f"{ci[0]:.2f}–{ci[1]:.2f}" if ci[0] is not None else "—", f"{m['precision']:.3f}", f"{m['recall']:.3f}", f"{m['tp']}/{m['fp']}/{m['fn']}",
                      "—" if m["fp_per_hour"] is None else f"{m['fp_per_hour']:.1f}", f"{m['threshold']:.2f}", f"{int(b['errors'])}/{int(b['allowed'])}", "да" if b["reached"] else "нет"])
@@ -1617,16 +1626,25 @@ def monitor_cmd(streams: Annotated[Optional[Path], typer.Option(help="катал
                 profile: Annotated[Optional[str], typer.Option("--profile", "-p", help="профиль моделей (configs/experiments); по умолчанию default")] = None,
                 camera: Annotated[Optional[list[str]], typer.Option(help="только эти камеры (район-индекс), можно несколько раз")] = None,
                 watch: Annotated[bool, typer.Option("--watch/--once")] = False, speed: Annotated[float, typer.Option(help="скорость воспроизведения: 1 — как в жизни, 0 — без пауз")] = 0.0,
-                interval: Annotated[float, typer.Option(help="период опроса папок в режиме --watch, с")] = 5.0) -> None:
+                interval: Annotated[float, typer.Option(help="период опроса папок в режиме --watch, с")] = 5.0,
+                solver: Annotated[Optional[Path], typer.Option(help="решатель (*.sdsolver.zip или установленный) вместо профиля")] = None,
+                classifier: Annotated[Optional[str], typer.Option(help="классификатор цикла (models/cycle/<имя>); обязателен, подменяет выбранный в профиле")] = None) -> None:
     from . import profiles as PR
+    from . import runner as RN
+    from . import solver as SV
     from .paths import STREAMS
     from .realtime.worker import run_monitor
 
-    prof = PR.load(profile) if profile else PR.default_profile()
+    prof = RN.with_classifier(SV.resolve_profile(solver) if solver else (PR.load(profile) if profile else PR.default_profile()), classifier)
+    errs = SV.errors(prof, "live")
+    if errs:
+        for e in errs:
+            console.print(f"[red]{e.text}[/]")
+        raise typer.Exit(1)
     root = streams or STREAMS
     console.print(f"камеры: {root} · профиль {prof.name} · {prof.describe()}")
     if not (prof.opts().get("cycle_bundle")):
-        console.print("[yellow]! классификатор цикла не задан: оценка — эвристика по длительности паузы (для отладки; не отличает питьё и телефон от курения)[/]")
+        console.print("[yellow]! классификатор цикла не задан (allow_heuristic): оценка — эвристика по длительности паузы, только для отладки[/]")
     try:
         tot = run_monitor(root, prof, cameras=camera, watch=watch, speed=speed, interval=interval, log=console.print)
     except KeyboardInterrupt:
@@ -1664,6 +1682,48 @@ def app_cmd(port: int = 8502, headless: bool = True, host: Annotated[str, typer.
            "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false"]
     console.print("запуск:", " ".join(cmd))
     raise typer.Exit(subprocess.call(cmd, cwd=str(ROOT)))
+
+
+@app.command("replay", help="Имитация реального времени по видео: файл идёт через потоковый движок кадр за кадром, тревоги печатаются в момент срабатывания. "
+                            "С эталоном (--gt) — ещё TP/FP/FN, F1 и задержка тревоги; всегда — пропускная способность (справится ли устройство с потоком).")
+def replay_cmd(video: VideoArg, profile: Annotated[Optional[str], typer.Option("--profile", "-p", help="профиль (configs/experiments)")] = None,
+               solver: Annotated[Optional[Path], typer.Option(help="решатель (*.sdsolver.zip или установленный)")] = None,
+               classifier: Annotated[Optional[str], typer.Option(help="классификатор цикла (обязателен; подменяет выбранный в профиле)")] = None,
+               start: Start = 0.0, end: End = None, speed: Annotated[float, typer.Option(help="0 — как можно быстрее, 1 — реальное время, N — в N раз быстрее")] = 0.0,
+               gt: Annotated[bool, typer.Option("--gt/--no-gt", help="сверять с эталоном labels/events_gt.csv, если для клипа он есть")] = True,
+               render: Annotated[bool, typer.Option("--render/--no-render", help="видео с рамками, баннером тревоги и разметкой")] = False) -> None:
+    from . import gt as GT
+    from . import profiles as PR
+    from . import runner as RN
+    from . import solver as SV
+    from .realtime import replay as RP
+
+    prof = RN.with_classifier(SV.resolve_profile(solver) if solver else (PR.load(profile) if profile else PR.default_profile()), classifier)
+    errs = SV.errors(prof, "replay")
+    if errs:
+        for e in errs:
+            console.print(f"[red]{e.text}[/]")
+        raise typer.Exit(1)
+    vid = resolve_video(video)
+    console.print(f"{vid.name}: профиль {prof.name} · {prof.describe()['cycle_model']} · темп x{speed:g}" if speed else f"{vid.name}: профиль {prof.name} · {prof.describe()['cycle_model']} · без пауз")
+
+    def on_alert(u) -> None:
+        if u.kind == "open":
+            console.print(f"  [red]ТРЕВОГА[/] поток {u.t_now:6.1f} с · начало события {u.start:6.1f} с · ID {u.tid} · {u.explain} · {u.confidence:.0%} (задержка {u.t_now - u.start:.1f} с)")
+        elif u.kind == "update":
+            console.print(f"  обновление: событие до {u.end:.1f} с · {u.explain} · {u.confidence:.0%}")
+
+    res = RP.replay_video(vid, prof, start=start, end=end, speed=speed, gt=GT.load() if gt else None, render=render, on_alert=on_alert)
+    s = res.stats
+    console.print(f"кадров {s['frames']} · {s['stream_sec']} с видео за {s['busy_sec']} с вычислений · {s['fps_proc']} к/с (нужно {s['process_fps_target']:g}) · мс/кадр p50 {s['ms_p50']}, p95 {s['ms_p95']}")
+    console.print(f"[bold]{s['verdict']}[/]")
+    console.print(f"циклов {s['cycles']}, тревог {s['alerts']}")
+    if res.metrics:
+        m = res.metrics
+        console.print(f"эталон: TP {m['tp']} FP {m['fp']} FN {m['fn']} · P {m['precision']:.2f} R {m['recall']:.2f} F1 {m['f1']:.2f} · задержка тревоги: медиана {m['alert_delay_median']}, максимум {m['alert_delay_max']} с")
+    for n in res.notes:
+        console.print(f"[yellow]! {n}[/]")
+    console.print(f"результаты: {res.out_dir}" + (f" · видео {res.overlay}" if res.overlay else ""))
 
 
 @app.command(help="Юнит-тесты (pytest).")

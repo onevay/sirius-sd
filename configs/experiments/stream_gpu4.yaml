@@ -1,0 +1,15 @@
+name: stream_gpu4
+description: "Поток на ПК 16 ГБ ОЗУ + NVIDIA 4 ГБ: поза YOLO26s@1280 на CUDA + RTMPose-s, быстрый классификатор цикла cycle_fast (только признаки позы и паузы — считаются в настоящем потоке без доступа к исходному файлу). Предмет/фото/VLM выключены: они нужны только для offline/replay-проверки. НЕ ИЗМЕРЕН на этой машине: проверьте `sd replay <клип> -p stream_gpu4` (rt_factor ≥ 1.5 с запасом на несколько камер)."
+config:
+  pose.weights: yolo26s-pose
+  pose.runtime: torch
+  pose.device: "cuda:0"
+  pose.imgsz: 1280
+  pose.refine.method: rtmpose-s
+  pose.refine.device: cuda
+  video.process_fps: 8
+  events.cycle_th: 0.4
+  events.confidence_threshold: 0.55
+options:
+  cycle_bundle: models/cycle/cycle_fast
+  vlm_mode: "off"

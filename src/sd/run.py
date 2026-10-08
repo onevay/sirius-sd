@@ -36,6 +36,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--render", type=Path, default=None, help="каталог для видео с разметкой")
     ap.add_argument("--max-sec", type=float, default=None, help="обрабатывать только первые N секунд каждого клипа")
     ap.add_argument("--no-cache", action="store_true", help="не брать результаты из кэша")
+    ap.add_argument("--solver", default=None, help="решатель: *.sdsolver.zip, каталог или имя установленного (вместо --profile)")
+    ap.add_argument("--classifier", default=None, help="классификатор цикла (models/cycle/<имя>); обязателен, подменяет выбранный в профиле")
     a = ap.parse_args(argv)
 
     src = Path(a.input)
@@ -43,7 +45,14 @@ def main(argv: list[str] | None = None) -> int:
     if not videos:
         print(f"в {src} нет видео", file=sys.stderr)
         return 2
-    prof = PR.load(a.profile) if a.profile else PR.default_profile()
+    from . import solver as SV
+
+    prof = RN.with_classifier(SV.resolve_profile(a.solver) if a.solver else (PR.load(a.profile) if a.profile else PR.default_profile()), a.classifier)
+    errs = SV.errors(prof)
+    if errs:
+        for e in errs:
+            print(f"! {e.text}", file=sys.stderr)
+        return 2
     th = prof.threshold if a.threshold is None else a.threshold
     zones = ROI.load(a.roi) if a.roi else None
     rec = None

@@ -140,6 +140,8 @@ render/        pose.mp4, cycles.mp4, *_tXX.png ...                       — в�
 | `sd.cmd oof-eval [--sets …] [--kinds lr,gb] [--repeats 3]` | **честная оценка**: оценка каждого цикла моделью, не видевшей его видео (фолды по видео), AUC по классам жестов, F1 события по эталону — лучший на всех клипах (оптимистичен: пороги подобраны на них) и с вложенным подбором порогов (честная оценка процедуры); `outputs/analysis/oof_study.csv` |
 | `sd.cmd ladder [--configs n960,m1280,x1280] [--clips …]` | «лестница вычислений»: что даёт более тяжёлая поза (модель, размер входа, уточнение точек) — recall затяжек циклами автомата, лишние циклы, мс на кадр; оценка выигрыша от более мощного ПК; `outputs/analysis/ladder.csv` |
 | `sd.cmd monitor [--streams папка] [-p профиль] [--watch] [--speed 1]` | мониторинг: камеры = папки `<район>-<индекс>-<время начала>`, тревоги → `outputs/monitor/monitor.db` ([REALTIME.md](REALTIME.md)) |
+| `sd.cmd replay <клип> [-p профиль \| --solver имя] [--classifier имя] [--speed 1] [--gt] [--render]` | имитация real-time по файлу: тревоги, F1 и задержка с эталоном, пропускная способность ([SOLVER_AND_STREAM.md](SOLVER_AND_STREAM.md)) |
+| `sd.cmd solver pack\|inspect\|install\|check\|list` | переносимый решатель `.sdsolver.zip` с метаданными архитектуры |
 | `sd.cmd app [--port 8502]` | интерфейс оператора: дашборд тревог, подтверждение, камеры, журнал |
 | `sd.cmd monitor-demo [--n 14] [--clear]` | демо-тревоги (помечены «ДЕМО») для работы над интерфейсом без моделей |
 | `sd.cmd feedback-export` | решения оператора → `labels/events_gt.csv` (подтверждено → POSITIVE, ложная → NEGATIVE) |

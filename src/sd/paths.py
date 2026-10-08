@@ -108,6 +108,19 @@ def portable(p: str | Path | None) -> str | None:
     return q.as_posix()
 
 
+def repo_path(p: str | Path) -> Path:
+    """Путь из профиля/конфига → рабочий путь этой машины. Относительные `models/…`, `data/…`, `outputs/…`, `labels/…` разворачиваются от СООТВЕТСТВУЮЩИХ каталогов (с учётом SD_MODELS и др.),
+    остальные относительные — от корня проекта; абсолютные не трогаются. Иначе профиль со ссылкой `models/cycle/x` не находил бы пакет при `SD_MODELS` вне проекта."""
+    q = Path(p)
+    if q.is_absolute():
+        return q
+    first, rest = (q.parts[0] if q.parts else ""), q.parts[1:]
+    for name, root in (("models", MODELS), ("data", DATA), ("data_external", EXTERNAL), ("outputs", OUTPUTS), ("labels", LABELS)):
+        if first == name:
+            return root.joinpath(*rest)
+    return ROOT / q
+
+
 def from_portable(s: str | Path | None) -> Path | None:
     """Обратное к `portable`. Понимает и «чужие» абсолютные пути (в т.ч. Windows `C:\\…` из старых артефактов): если файла нет, ищет по хвосту пути (1–3 последних
     компонента) в `data/` и `data_external/`."""

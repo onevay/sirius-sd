@@ -166,11 +166,12 @@ class _Emitted:
 
 class StreamEngine:
     def __init__(self, cfg: dict, camera_id: str, pose_fn: PoseFn, scorer: Scorer | None = None, *, frame_hw: tuple[int, int] | None = None, buffer_sec: float = 90.0,
-                 eval_every_sec: float = 1.0, settle_sec: float = 1.0, keep_frames: bool = True, ring_sec: float = 45.0):
+                 eval_every_sec: float = 1.0, settle_sec: float = 1.0, keep_frames: bool = True, ring_sec: float = 45.0, source_path: str | Path | None = None):
         self.cfg, self.camera_id, self.pose_fn = cfg, camera_id, pose_fn
         self.scorer: Scorer = scorer or HeuristicScorer()
         self.buffer_sec, self.eval_every, self.settle = buffer_sec, eval_every_sec, settle_sec
         self.frame_hw = frame_hw
+        self.source_path = str(source_path) if source_path else None      # исходный файл (имитация потока): нужен признакам предмета/фото; в настоящем потоке None
         self.ring = FrameRing(ring_sec) if keep_frames else None
         self._rows: list[tuple] = []          # frame, t, tid, x1, y1, x2, y2, score, h
         self._kp: list[np.ndarray] = []
@@ -182,13 +183,16 @@ class StreamEngine:
         self._emitted: dict[str, _Emitted] = {}
         self.threshold = float(cfg["events"]["confidence_threshold"])
         self.stats = dict(frames=0, evals=0, cycles=0)
+        self.last_dets: list[tuple[int, list[float]]] = []
 
     # ------------------------------------------------------------------ вход
     def step(self, img: np.ndarray | None, t: float) -> list[AlertUpdate]:
         """Один обработанный кадр потока. `img=None` допустим для тестов с готовыми детекциями (тогда `pose_fn` получает None)."""
         if img is not None and self.frame_hw is None:
             self.frame_hw = (int(img.shape[0]), int(img.shape[1]))
-        for d in self.pose_fn(img, t):
+        dets = self.pose_fn(img, t)
+        self.last_dets = [(int(d.tid), [float(x) for x in d.box]) for d in dets]        # для отрисовки поверх кадра (replay)
+        for d in dets:
             self._rows.append((self._n, t, int(d.tid), *[float(x) for x in d.box], float(d.score), float(d.box[3] - d.box[1])))
             self._kp.append(np.asarray(d.kp, np.float32))
         self._frames.append((self._n, t))
@@ -211,8 +215,10 @@ class StreamEngine:
         if not self._rows:
             return None
         df = pd.DataFrame(self._rows, columns=["frame", "t", "tid", "x1", "y1", "x2", "y2", "score", "h"])
-        vi = dict(height=self.frame_hw[0], width=self.frame_hw[1]) if self.frame_hw else {}
-        return Tracks(df, np.stack(self._kp), pd.DataFrame(self._frames, columns=["frame", "t"]), dict(video_info=vi))
+        # размер кадра нужен признакам цикла (положение на кадре, расстояние до края); без кадров (тесты, готовые детекции) оцениваем по рамкам
+        h, w = self.frame_hw if self.frame_hw else (int(df.y2.max()) + 1, int(df.x2.max()) + 1)
+        vi = dict(height=int(h), width=int(w))
+        return Tracks(df, np.stack(self._kp), pd.DataFrame(self._frames, columns=["frame", "t"]), dict(video_info=vi, **({"video": self.source_path} if self.source_path else {})))
 
     def _trim(self, t_now: float) -> None:
         cut = t_now - self.buffer_sec

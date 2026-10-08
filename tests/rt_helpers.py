@@ -51,3 +51,17 @@ def run_stream(engine, duration, fps=10.0, flush=True):
     if flush:
         out += engine.flush(duration)
     return out
+
+
+def make_bundle(path, features, seed=0, n=60):
+    """Синтетический пакет классификатора цикла (логрегрессия по `features`) — для тестов без реальных данных."""
+    import numpy as np
+    import pandas as pd
+
+    from sd.bundle import train_bundle
+
+    rng = np.random.default_rng(seed)
+    y = (np.arange(n) % 2).astype(int)
+    X = pd.DataFrame({f: rng.normal(size=n) + y * 1.5 for f in features})
+    train_bundle(X, y, np.arange(n) % 6, {"lr": dict(kind="logreg", features=list(features))}, path, n_splits=2, repeats=1, meta=dict(note="synthetic"))
+    return path

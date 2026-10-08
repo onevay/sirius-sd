@@ -47,6 +47,12 @@ class Options:
     render: bool = False
     camera_id: str = "cam_local"
     backend: str = "auto"                    # рантайм эмбеддингов фото-модели: auto | ov | torch
+    fusion: dict | None = None               # позднее слияние сигналов (VLM, предмет, фото) с оценкой классификатора — см. fusion.py; None/нулевые веса = выключено
+    allow_heuristic: bool = False            # без классификатора цикла `recognize` отказывается работать, пока это не разрешено явно (отладка)
+
+
+class ClassifierRequired(ValueError):
+    """Не задан классификатор цикла. Он обязателен: эвристика по паузе не отличает курение от питья и телефона."""
 
 
 @dataclass
@@ -67,8 +73,9 @@ def _sha(path: Path) -> str:
 
 
 def _abs(p: str | Path) -> Path:
-    p = Path(p)
-    return p if p.is_absolute() else ROOT / p
+    from .paths import repo_path
+
+    return repo_path(p)
 
 
 def bundle_info(p: str | Path | None, kind: str) -> dict | None:
@@ -120,6 +127,8 @@ def recognize(video: str | Path, start: float, end: float | None, cfg: dict, opt
     from .dataset import build_cycle_table
     from .pose_feats import pose_rows
 
+    if not opts.cycle_bundle and not opts.allow_heuristic:
+        raise ClassifierRequired("не задан классификатор цикла (cycle_bundle): он обязателен; для отладки без него — allow_heuristic=True / options.allow_heuristic: true")
     video = Path(video)
     clip = video.stem
     t_all = time.perf_counter()
@@ -226,6 +235,16 @@ def recognize(video: str | Path, start: float, end: float | None, cfg: dict, opt
                 score = cascade(score, avail, s_full)
             elif "vlm_yesno" in tab and tab["vlm_yesno"].notna().any():
                 warnings.append("VLM посчитан, но пакет с VLM-признаком (cycle_bundle_full) не задан: итоговая оценка = оценка дешёвого пакета; ответы VLM показаны в таблице")
+        from . import fusion as FU
+
+        spec = FU.FusionSpec.from_dict(opts.fusion)
+        if spec.active:        # поправка к оценке классификатора; вектор его признаков не меняется (fusion.py)
+            fused, contrib = FU.fuse(score, tab, spec)
+            if not contrib.to_numpy().any():
+                warnings.append("слияние включено, но ни у одного цикла нет нужных сигналов (VLM / предмет / фото-модель не посчитаны): оценки не изменились")
+            tab = pd.concat([tab.drop(columns=[c for c in contrib.columns if c in tab.columns]), contrib], axis=1)
+            tab["score_base"] = score
+            score = fused
         tab["score"] = score
         scored = tab
     scores = {(int(r.tid), round(float(r.start), 3)): float(r.score) for r in scored.itertuples() if hasattr(r, "score") and np.isfinite(r.score)} if len(scored) and "score" in scored else {}

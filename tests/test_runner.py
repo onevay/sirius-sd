@@ -101,7 +101,7 @@ def test_evaluate_dirs_events_mode_end_to_end(tmp_path):
     d1, d2 = make_world(tmp_path)
     gt = _gt(tmp_path, d1, d2)
     fake = Fake({"s1": [(10, 20, 0.9)], "s2": [(31, 44, 0.3)], "f1": [(5, 12, 0.8)]})
-    out = R.evaluate_dirs([d1, d2], PR.default_profile(), mode="events", policy="fixed", gt_df=gt, recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c",
+    out = R.evaluate_dirs([d1, d2], PR.heuristic_profile(), mode="events", policy="fixed", gt_df=gt, recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c",
                           exp_root=tmp_path / "exp", n_boot=20, target_f1=0.8)
     m = out.report.metrics
     assert (m["tp"], m["fp"], m["fn"]) == (1, 1, 1) and m["clips"] == 3 and m["neg_clips"] == 1
@@ -125,13 +125,13 @@ def test_only_selected_dirs_and_only_labeled_clips_are_evaluated(tmp_path):
     G.delete(gt[gt.clip_id == video_id(d1 / "s2.mp4")].id, path=tmp_path / "gt.csv")
     gt = G.load(tmp_path / "gt.csv")
     fake = Fake({"s1": [(10, 20, 0.9)]})
-    out = R.evaluate_dirs([d1], PR.default_profile(), policy="fixed", gt_df=gt, recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False, n_boot=10)
+    out = R.evaluate_dirs([d1], PR.heuristic_profile(), policy="fixed", gt_df=gt, recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False, n_boot=10)
     assert [c[0] for c in fake.calls] == ["s1"]                                      # лишние папки и неразмеченный s2 не запускались
     assert out.report.metrics["clips"] == 1 and any("неразмеченных" in n for n in out.report.notes)
     with pytest.raises(ValueError, match="нет размеченных"):
-        R.evaluate_dirs([d2], PR.default_profile(), gt_df=G.empty(), recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False)
+        R.evaluate_dirs([d2], PR.heuristic_profile(), gt_df=G.empty(), recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False)
     with pytest.raises(ValueError, match="нет видео"):
-        R.evaluate_dirs([tmp_path / "пусто"], PR.default_profile(), gt_df=gt, recognize_fn=fake, probe_fn=probe, save=False)
+        R.evaluate_dirs([tmp_path / "пусто"], PR.heuristic_profile(), gt_df=gt, recognize_fn=fake, probe_fn=probe, save=False)
 
 
 def test_hidden_role_freezes_threshold(tmp_path):
@@ -139,8 +139,8 @@ def test_hidden_role_freezes_threshold(tmp_path):
     gt = _gt(tmp_path, d1, d2)
     fake = Fake({"s1": [(10, 20, 0.9)]})
     with pytest.raises(ValueError, match="фиксируется"):
-        R.evaluate_dirs([d1], PR.default_profile(), role="hidden", policy="plateau", gt_df=gt, recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False)
-    out = R.evaluate_dirs([d1], PR.Profile("h", config={"events.confidence_threshold": 0.77}), role="hidden", policy="fixed", gt_df=gt, recognize_fn=fake, probe_fn=probe,
+        R.evaluate_dirs([d1], PR.heuristic_profile(), role="hidden", policy="plateau", gt_df=gt, recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False)
+    out = R.evaluate_dirs([d1], PR.Profile("h", config={"events.confidence_threshold": 0.77}, options={"allow_heuristic": True}), role="hidden", policy="fixed", gt_df=gt, recognize_fn=fake, probe_fn=probe,
                           cache_root=tmp_path / "c", save=False, n_boot=10)
     assert out.report.settings["threshold"] == 0.77 and any("не подбирался" in n for n in out.report.notes)
 
@@ -148,11 +148,11 @@ def test_hidden_role_freezes_threshold(tmp_path):
 def test_weak_mode_by_folder_labels(tmp_path):
     d1, d2 = make_world(tmp_path)
     fake = Fake({"s1": [(10, 20, 0.9)], "s2": [], "f1": [(5, 12, 0.8)]})
-    out = R.evaluate_dirs([d1, d2], PR.default_profile(), mode="clips", policy="fixed", recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False, n_boot=10)
+    out = R.evaluate_dirs([d1, d2], PR.heuristic_profile(), mode="clips", policy="fixed", recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False, n_boot=10)
     m = out.report.metrics
     assert out.report.mode == "clips" and (m["tp"], m["fp"], m["fn"]) == (1, 1, 1)
     with pytest.raises(ValueError, match="обоих классов"):
-        R.evaluate_dirs([d1], PR.default_profile(), mode="clips", recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False)
+        R.evaluate_dirs([d1], PR.heuristic_profile(), mode="clips", recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False)
 
 
 def test_gt_outside_window_is_not_a_miss(tmp_path):
@@ -162,7 +162,7 @@ def test_gt_outside_window_is_not_a_miss(tmp_path):
     G.add(cid, 8, 22, "POSITIVE", person=1, box=(0, 0, 100, 200), path=f)
     G.add(cid, 70, 85, "POSITIVE", person=1, box=(0, 0, 100, 200), path=f)           # за пределами окна 0–30 с
     fake = Fake({"s1": [(10, 20, 0.9)]})
-    out = R.evaluate_dirs([d1], PR.default_profile(), policy="fixed", gt_df=G.load(f), recognize_fn=fake, probe_fn=probe, max_sec=30, cache_root=tmp_path / "c", save=False, n_boot=10)
+    out = R.evaluate_dirs([d1], PR.heuristic_profile(), policy="fixed", gt_df=G.load(f), recognize_fn=fake, probe_fn=probe, max_sec=30, cache_root=tmp_path / "c", save=False, n_boot=10)
     assert out.report.metrics["fn"] == 0 and out.report.metrics["tp"] == 1 and out.runs[0].duration == 30.0
 
 
@@ -172,5 +172,5 @@ def test_roi_filters_predictions_before_scoring(tmp_path):
     roi = tmp_path / "roi.json"
     roi.write_text(json.dumps({"polygon": [[500, 500], [600, 500], [600, 600]]}))      # событие в рамке (0..100, 0..200) вне зоны
     fake = Fake({"s1": [(10, 20, 0.9)]})
-    out = R.evaluate_dirs([d1], PR.default_profile(), policy="fixed", gt_df=gt, roi_path=roi, recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False, n_boot=10)
+    out = R.evaluate_dirs([d1], PR.heuristic_profile(), policy="fixed", gt_df=gt, roi_path=roi, recognize_fn=fake, probe_fn=probe, cache_root=tmp_path / "c", save=False, n_boot=10)
     assert out.report.metrics["tp"] == 0 and out.report.metrics["fn"] >= 1

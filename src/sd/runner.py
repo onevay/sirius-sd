@@ -151,7 +151,14 @@ def _weak_frame(runs: Iterable[ClipRun]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["clip_id", "y", "duration", "events"])
 
 
-def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, mode: str = "events", role: str = "validation", policy: str = "plateau", target_f1: float = 0.80,
+def with_classifier(profile: Profile, classifier: str | Path | None) -> Profile:
+    """Копия профиля с выбранным классификатором цикла (выбор классификатора — часть проверки, а не скрытая деталь профиля)."""
+    if not classifier:
+        return profile
+    return Profile(profile.name, profile.description, profile.base, dict(profile.config), {**profile.options, "cycle_bundle": str(classifier)})
+
+
+def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, classifier: str | Path | None = None, mode: str = "events", role: str = "validation", policy: str = "plateau", target_f1: float = 0.80,
                   only_labeled: bool = True, window: tuple[float, float | None] = (0.0, None), max_sec: float | None = None, roi_path: str | Path | None = None,
                   use_cache: bool = True, name: str | None = None, save: bool = True, gt_df: pd.DataFrame | None = None, n_boot: int = 300,
                   recognize_fn: Callable | None = None, probe_fn: Callable | None = None, progress: Progress = None, cache_root: Path | None = None,
@@ -159,6 +166,12 @@ def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, mode: str = "
     """Полный цикл: клипы выбранных папок → события → отчёт → журнал. Исключения: `ValueError` — нечего оценивать (нет размеченных клипов / нет клипов)."""
     if mode not in ("events", "clips"):
         raise ValueError("mode ∈ {events, clips}")
+    from . import solver as SV
+
+    profile = with_classifier(profile, classifier)
+    errs = SV.errors(profile)           # до долгого прогона: нет классификатора, нет нужных экстракторов, неверный fusion
+    if errs:
+        raise ValueError("профиль не готов к оценке:\n  - " + "\n  - ".join(e.text for e in errs))
     if role not in ("validation", "hidden"):
         raise ValueError("role ∈ {validation, hidden}")
     if role == "hidden" and policy != "fixed":

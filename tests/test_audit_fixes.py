@@ -79,7 +79,7 @@ def test_clip_that_cannot_be_probed_still_counts_as_misses(tmp_path):
     def bad_probe(v):
         raise OSError("битый контейнер")
 
-    out = R.evaluate_dirs([d], PR.default_profile(), policy="fixed", gt_df=GT.load(f), recognize_fn=lambda *a: None, probe_fn=bad_probe, cache_root=tmp_path / "c", save=False, n_boot=10)
+    out = R.evaluate_dirs([d], PR.heuristic_profile(), policy="fixed", gt_df=GT.load(f), recognize_fn=lambda *a: None, probe_fn=bad_probe, cache_root=tmp_path / "c", save=False, n_boot=10)
     m = out.report.metrics
     assert m["clips"] == 1 and m["fn"] == 1 and m["tp"] == 0 and m["f1"] == 0.0          # сбой не «исчезает» из метрики
     assert any("ошибк" in n for n in out.report.notes)
