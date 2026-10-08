@@ -74,8 +74,8 @@ def _classifier_block(first: PR.Profile | None, many: bool) -> tuple[str | None,
         return None, True
     ids = [b.id for b in bundles]
     cur = (first.opts()["cycle_bundle"] if first else None)
-    options = ([None] if many else []) + ids
-    sel = st.selectbox("Классификатор цикла", options, index=options.index(cur) if cur in options else 0, key="eval_classifier",
+    options = ([None] if many else []) + ids + ([cur] if cur and cur not in ids else [])
+    sel = st.selectbox("Классификатор цикла", options, index=options.index(cur) if cur in options else 0, key="eval_classifier_" + (first.name if first else "") + f"_{many}",
                        format_func=lambda x: "как в профиле" if x is None else Path(x).name, help="обязателен: он оценивает каждый цикл; остальное подключается к нему, не меняя его признаков")
     if sel:
         try:

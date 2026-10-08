@@ -73,7 +73,7 @@ def _solver() -> None:
         if st.button("Упаковать", type="primary"):
             try:
                 p = RN.with_classifier(PR.load(prof), None if cls == "как в профиле" else cls)
-                out = SV.pack(p, OUTPUTS / "solvers" / nm, name=nm, with_weights=ww, with_dataset=wd, run_id=None if run == "—" else run)
+                out = SV.pack(p, OUTPUTS / "solvers" / Path(nm).name, name=nm, with_weights=ww, with_dataset=wd, run_id=None if run == "—" else run)
                 st.session_state["sv_packed"] = out["path"]
                 st.success(f"{out['path']} · {out['size_mb']} МБ")
             except Exception as e:

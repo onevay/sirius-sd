@@ -135,7 +135,7 @@ def _weights_identity(cfg: dict, o: dict) -> dict:
 
 def _check_name(name: str) -> str:
     n = str(name).strip()
-    if not n or not all(c.isalnum() or c in "-_." for c in n):
+    if not n or n.startswith(".") or not all(c.isalnum() or c in "-_." for c in n):
         raise ValueError("имя профиля: буквы, цифры, - _ .")
     return n
 

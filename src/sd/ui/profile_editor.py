@@ -122,8 +122,8 @@ def editor(base: Profile, key: str = "pe", classifier: str | None = None) -> Pro
     with st.expander("Слияние сигналов с оценкой классификатора (VLM, предмет, фото-модель)"):
         st.caption("Поправка к логиту оценки классификатора; вектор признаков классификатора не меняется. Вес 0 — выключено. Подбирайте на валидации («Эксперименты» → «Варианты профиля», ключ fusion).")
         fz = dict((o["fusion"] or {}).get("weights", {}))
-        fw = {n: st.slider(lbl, 0.0, 2.0, float(fz.get(n, 0.0)), 0.1, key=k + "fz" + n) for n, lbl in (("vlm", "вес VLM"), ("object", "вес предмета"), ("photo", "вес фото-модели"))}
-        fclip = st.slider("Максимум поправки, логиты", 0.5, 4.0, float((o["fusion"] or {}).get("clip_logit", 2.0)), 0.1, key=k + "fzclip")
+        fw = {n: st.slider(lbl, 0.0, 5.0, float(fz.get(n, 0.0)), 0.1, key=k + "fz" + n) for n, lbl in (("vlm", "вес VLM"), ("object", "вес предмета"), ("photo", "вес фото-модели"))}
+        fclip = st.slider("Максимум поправки, логиты", 0.5, 10.0, float((o["fusion"] or {}).get("clip_logit", 2.0)), 0.1, key=k + "fzclip")
     opt.update(cycle_bundle=None if cb == NONE else cb, photo_bundle=None if pb == NONE else pb, objects=list(objs), vlm_model=None if vm == NONE else vm,
                vlm_mode=vmode if vm != NONE else "off", grey=[float(grey[0]), float(grey[1])], allow_heuristic=allow_heur,
                fusion=dict(weights={n: w for n, w in fw.items() if w > 0}, clip_logit=float(fclip)) if any(w > 0 for w in fw.values()) else None)

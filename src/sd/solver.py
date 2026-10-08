@@ -148,6 +148,8 @@ def check(profile: PR.Profile, mode: str = "offline") -> list[Issue]:
         issues.append(Issue("warn", "fusion_and_full", "заданы и fusion, и cycle_bundle_full: VLM будет учтён дважды (каскад и поправка) — оставьте один способ"))
     if o["vlm_model"] and o["vlm_mode"] != "off" and not (spec.active or o["cycle_bundle_full"] or bundle_vlm):
         issues.append(Issue("warn", "vlm_unused", "VLM включён, но его ответы нигде не используются (нет fusion и cycle_bundle_full): считается впустую"))
+    if spec.active and mode in ("replay", "live"):
+        issues.append(Issue("error", "fusion_stream", "fusion пока не применяется в потоке и replay (только offline/eval/sd.run): результат отличался бы от оценки. Отключите fusion или используйте offline"))
     if mode == "live" and o["vlm_model"] and o["vlm_mode"] != "off":
         issues.append(Issue("warn", "live_vlm", "VLM в настоящем потоке не подключён (нужна асинхронная очередь): будет проигнорирован"))
     return issues
@@ -244,8 +246,8 @@ def _sha(p: Path) -> str:
 
 def _clean_name(name: str) -> str:
     n = re.sub(r"[^\w.\-]+", "_", name, flags=re.UNICODE).strip("_")
-    if not n:
-        raise ValueError("пустое имя решателя")
+    if not n or n.startswith(".") or n.endswith("."):
+        raise ValueError(f"недопустимое имя решателя: {name!r}")
     return n
 
 
@@ -443,6 +445,20 @@ def install(path: str | Path, *, overwrite: bool = False, models_dir: Path | Non
     name = _clean_name(meta["id"])
     for arc in meta.get("files", {}):
         _safe_member(arc)
+        if Path(arc).parts[0] == "bundles" and (len(Path(arc).parts) < 4 or Path(arc).parts[1] not in ("cycle", "photo")):
+            raise ValueError(f"недопустимое расположение пакета в архиве: {arc} (ожидается bundles/<cycle|photo>/<имя>/<файл>)")
+    for w in meta.get("weights", []):
+        if w.get("included"):
+            _safe_member(str(w.get("archive_path", "")))
+            if w["archive_path"] not in meta["files"]:
+                raise ValueError(f"вес {w['archive_path']} не описан в files (нет sha256)")
+            if w.get("file"):
+                _safe_member("weights/" + str(w["file"]).replace("\\", "/"))
+    opts = (meta.get("profile") or {}).get("options") or {}
+    if opts.get("allow_heuristic") or not opts.get("cycle_bundle"):
+        raise ValueError("в решателе не выбран классификатор цикла (или разрешена эвристика): такой решатель не устанавливается")
+    if (md / "solvers" / name / "solver.json").exists() and not overwrite:
+        raise FileExistsError(f"решатель {name} уже установлен; overwrite=True заменит")
     z, d = _open(path)
     md.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix=".solver_", dir=str(md)))      # рядом с целью: перенос внутри одного тома
@@ -484,6 +500,8 @@ def install(path: str | Path, *, overwrite: bool = False, models_dir: Path | Non
         for w in meta.get("weights", []):
             if w.get("included"):
                 src = stage / w["archive_path"]
+                if _sha(src) != w["sha256"]:
+                    raise ValueError(f"вес {w['archive_path']}: sha256 содержимого не совпадает с метаданными")
                 dst = md / (w["file"] or Path(w["archive_path"]).name)
                 if dst.exists() and not overwrite and _sha(dst) != w["sha256"]:
                     skipped.append(f"{dst.name}: уже есть другой файл (sha256 отличается), не перезаписан")
@@ -557,8 +575,15 @@ def resolve_profile(spec: str | Path, *, overwrite: bool = False) -> PR.Profile:
     if s.endswith(EXT) or s.endswith(".zip") or (p.is_dir() and (p / "solver.json").exists()):
         meta = inspect(p, verify=False)["meta"]
         name = _clean_name(meta["id"])
-        if not (MODELS / "solvers" / name / "solver.json").exists() or overwrite:
+        cur = MODELS / "solvers" / name / "solver.json"
+        if not cur.exists():
+            install(p)
+        elif overwrite:
             install(p, overwrite=True)
+        else:
+            old = json.loads(cur.read_text(encoding="utf-8"))
+            if old.get("fingerprint") != meta.get("fingerprint") or old.get("created") != meta.get("created"):
+                raise ValueError(f"решатель {name} уже установлен, но это другая версия архива: `sd solver install {p} --overwrite` заменит, либо переименуйте решатель")
         return PR.load(name)
     if (MODELS / "solvers" / s / "solver.json").exists():
         return PR.load(s)

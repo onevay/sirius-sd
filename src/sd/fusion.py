@@ -27,8 +27,8 @@ SIGNALS = {
 EPS = 0.02
 
 
-def _logit(p):
-    p = np.clip(np.asarray(p, float), EPS, 1 - EPS)
+def _logit(p, eps: float = EPS):
+    p = np.clip(np.asarray(p, float), eps, 1 - eps)
     return np.log(p / (1 - p))
 
 
@@ -48,9 +48,12 @@ class FusionSpec:
         bad = set(w) - set(SIGNALS)
         if bad:
             raise KeyError(f"fusion.weights: неизвестные сигналы {sorted(bad)} (допустимо {sorted(SIGNALS)})")
-        if any(v < 0 or v > 5 for v in w.values()):
+        if any(not np.isfinite(v) or v < 0 or v > 5 for v in w.values()):
             raise ValueError("fusion.weights: вес сигнала ∈ [0, 5] (отрицательный вес означал бы «чем увереннее VLM, тем меньше курение»)")
-        return cls(w, float(d.get("clip_logit", 2.0)), {str(k): float(v) for k, v in (d.get("refs") or {}).items()})
+        cl = float(d.get("clip_logit", 2.0))
+        if not np.isfinite(cl) or cl <= 0 or cl > 10:
+            raise ValueError("fusion.clip_logit ∈ (0, 10]")
+        return cls(w, cl, {str(k): float(v) for k, v in (d.get("refs") or {}).items()})
 
     @property
     def active(self) -> bool:
@@ -90,5 +93,5 @@ def fuse(base: np.ndarray, tab: pd.DataFrame, spec: FusionSpec | dict | None) ->
         contrib[f"fusion_{name}"] = c
         shift += c
     shift = np.clip(shift, -spec.clip_logit, spec.clip_logit)
-    out = 1.0 / (1.0 + np.exp(-(_logit(base) + shift)))
+    out = 1.0 / (1.0 + np.exp(-(_logit(base, 1e-6) + shift)))
     return np.where(np.isfinite(base) & (shift != 0), out, base), contrib       # у циклов без поправки оценка остаётся ровно прежней

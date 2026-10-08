@@ -63,6 +63,7 @@ class ClassifierScorer:
             from .. import analysis as A
 
             tr.meta["video"] = str(self.source)
+            feats = feats.assign(start=feats["start"].round(3))
             cyc = feats[["video", "tid", "start", "end", "mouth_in", "mouth_out", "peak_t", "hold", "d_min", "hand"]].copy()
             cyc["start"] = cyc["start"].round(3)
             cyc["run"], cyc["idx"] = "stream", range(len(cyc))
