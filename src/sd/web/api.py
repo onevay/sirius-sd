@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import queue
 import threading
 import time
@@ -12,6 +13,7 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from .. import paths as P
@@ -450,6 +452,68 @@ class WebApp:
                 if meta.get("video") == vid:
                     return dict(trace=t, meta=meta)
         return None
+
+    def export_video(self, vid: str, profile: str | None = None) -> dict:
+        """Видео с разметкой из сохранённого разбора (трассы): рамки и ID людей, баннер тревоги, полоса эталона, время. Модель заново не запускается — рисуется то, что
+        она выдала при анализе. Файл: `outputs/web/exports/<видео>__<профиль>.mp4` (H.264, ширина до 960 px)."""
+        from types import SimpleNamespace
+
+        import cv2
+
+        from ..realtime.replay import _annotate
+        from ..video_io import FFmpegWriter, choose_stride, iter_frames, probe
+
+        a = self.latest_analysis(vid, profile)
+        if not a:
+            raise NotFound("для этого видео нет сохранённого разбора: сначала запустите анализ")
+        tr, meta = a["trace"], a["meta"]
+        src = self.resolve(vid)
+        fps = float(tr.get("fps") or 5.0)
+        frames = tr.get("frames") or []
+        times = np.array([f[0] for f in frames], float) if frames else np.zeros(0)
+        alerts = tr.get("alerts") or []
+        gts = tr.get("gt") or []
+        safe = re.sub(r"[^\w.-]+", "_", f"{src.stem}__{meta.get('profile') or profile or 'model'}")
+        out = self.out / "exports" / f"{safe}.mp4"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        info = probe(src)
+        writer = None
+        try:
+            for fr in iter_frames(src, 0.0, None, choose_stride(info.fps, fps)):
+                dets = []
+                if len(times):
+                    k = int(np.argmin(np.abs(times - fr.t)))
+                    if abs(times[k] - fr.t) <= 1.5 / fps:
+                        dets = [(int(b[0]), b[1:5]) for b in frames[k][1]]
+                # сигнал рисуется на всём интервале события: в потоке тревога подтверждается позже конца события (t_open > end), и условие «после t_open» гасило её целиком
+                act = [SimpleNamespace(tid=int(x["tid"]), confidence=float(x["confidence"]), explain=str(x.get("explain", ""))) for x in alerts
+                       if float(x["start"]) <= fr.t <= float(x["end"]) + 1.0]
+                gl = "kurenie" if any(g["start"] <= fr.t <= g["end"] for g in gts) else None
+                img = _annotate(fr.img, dets, act, gl, fr.t)
+                if len(times) and abs(times[k] - fr.t) <= 1.5 / fps:            # ключевые точки трекера (как на экране приложения)
+                    sc = img.shape[1] / fr.img.shape[1]
+                    hot = {a_.tid for a_ in act}
+                    for b in frames[k][1]:
+                        kp = b[5] if len(b) > 5 else []
+                        for x, y, c in zip(kp[0::3], kp[1::3], kp[2::3]):
+                            if c >= 30:
+                                cv2.circle(img, (int(x * sc), int(y * sc)), 3, (60, 60, 255) if int(b[0]) in hot else (0, 220, 255), -1)
+                h, w = img.shape[0] - img.shape[0] % 2, img.shape[1] - img.shape[1] % 2
+                if writer is None:
+                    writer = FFmpegWriter(out, w, h, fps)
+                writer.write(img[:h, :w])
+        finally:
+            if writer is not None:
+                writer.close()
+        if not out.exists() or out.stat().st_size == 0:
+            raise RuntimeError("не удалось записать видео")
+        return dict(name=out.name, path=str(out), url=f"/media/export/{out.name}", size_mb=round(out.stat().st_size / 1e6, 1))
+
+    def export_path(self, name: str) -> Path:
+        p = (self.out / "exports" / name).resolve()
+        if p.parent != (self.out / "exports").resolve() or not p.exists():
+            raise NotFound(name)
+        return p
 
     def analysis_summary(self, vid: str) -> dict | None:
         """Краткий итог последнего разбора видео (без чтения трассы): {profile, alerts, f1, rt_factor, created}."""

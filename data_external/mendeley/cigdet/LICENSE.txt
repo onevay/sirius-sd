@@ -1,2 +1,0 @@
-CC BY 4.0 (Mendeley Data, DOI 10.17632/6hyrr8typ7.1, Ali Khan, 2024-03-28): 557 снимков класса «курит» набора Smoker Detection (тот же автор) с рамками сигарет в формате YOLO (train 446 / test 111). Нужно указывать авторство. Снимки пересекаются с положительными снимками «Smoker Detection», в наборе нет снимков без сигареты: это тест ДЕТЕКТОРА предмета (`sd detector-eval --data … --split test`), а не фото-набор «курит / не курит» — labels.csv намеренно не создаётся.
-Источник: https://data.mendeley.com/datasets/6hyrr8typ7/1

@@ -72,7 +72,7 @@ def _annotate(img: np.ndarray, dets: list, active: list[AlertUpdate], gt_label: 
     if active:
         u = max(active, key=lambda a: a.confidence)
         cv2.rectangle(out, (0, 0), (out.shape[1], 30), (30, 30, 200), -1)
-        cv2.putText(out, f"TREVOGA  ID {u.tid} - {u.explain} - {u.confidence:.0%}", (8, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(out, f"TREVOGA (kurenie)  ID {u.tid}  {u.confidence:.0%}", (8, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
     if gt_label:
         cv2.putText(out, f"GT: {gt_label}", (8, out.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (60, 200, 60), 2)
     cv2.putText(out, f"{t:6.1f}s", (out.shape[1] - 90, out.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)

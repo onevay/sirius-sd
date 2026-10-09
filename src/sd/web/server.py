@@ -196,6 +196,9 @@ def make_handler(app: WebApp):
                 if r["path"] is None:
                     return self._json(dict(state=r["state"], error=r["error"], pct=round(r["pct"], 3)), 202 if r["state"] == "preparing" else 500)
                 return self._file(r["path"], r["mime"])
+            if m := re.fullmatch(r"/media/export/([^/]+)", p):
+                f = app.export_path(m.group(1))
+                return self._file(f, "video/mp4") if q.get("view") else self._send(200, f.read_bytes(), "video/mp4", {"Content-Disposition": f"attachment; filename={f.name}"})
             if m := re.fullmatch(r"/media/alert/(\d+)/(thumb|clip)", p):
                 return self._file(app.artifact(int(m.group(1)), m.group(2)))
             raise NotFound(p)
@@ -222,6 +225,8 @@ def make_handler(app: WebApp):
                     if st not in ("new", "confirmed", "false", "unsure"):
                         raise ValueError("status ∈ new, confirmed, false, unsure")
                     return self._json(app.review(int(m.group(1)), st, str(body.get("reviewer", ""))[:60], str(body.get("note", ""))[:500]))
+                if p == "/api/export-video":
+                    return self._json(app.export_video(body["video"], body.get("profile")))
                 if p == "/api/analyze":
                     if body.get("folder"):
                         return self._json([j.to_dict() for j in app.submit_folder(body["folder"], body["profile"])], 202)

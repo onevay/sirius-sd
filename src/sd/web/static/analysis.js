@@ -50,7 +50,7 @@ async function vAnalysis(q) {
         <div id="pinfo" class="mut small" style="margin-top:8px"></div><div class="prog hidden" id="prog" style="margin-top:8px"><i></i></div><div id="jstat" class="mut small" style="margin-top:4px"></div></div>
       <div class="panel" style="padding:0;overflow:hidden"><div class="vwrap" id="pw"><video id="pv" controls muted playsinline></video><canvas id="ov"></canvas></div><div class="timeline" id="tl"></div>
       <div class="toolbar"><button id="prevA" title="[">◀ тревога</button><button id="nextA" title="]">тревога ▶</button><select class="pill" id="rate"><option value="0.5">×0.5</option><option value="1" selected>×1</option><option value="2">×2</option><option value="4">×4</option></select>
-        <label title="B"><input type="checkbox" id="tBox" checked> рамки</label><label title="K"><input type="checkbox" id="tKp" checked> точки трекера</label><label><input type="checkbox" id="tGt" checked> разметка</label><span class="grow mut small" id="pst"></span></div></div>
+        <label title="B"><input type="checkbox" id="tBox" checked> рамки</label><label title="K"><input type="checkbox" id="tKp" checked> точки трекера</label><label><input type="checkbox" id="tGt" checked> разметка</label><button id="saveVid" title="Видео с рамками, ID, тревогами и разметкой из последнего разбора">💾 Видео с разметкой</button><span class="grow mut small" id="pst"></span></div></div>
       <div class="panel hidden" id="res" style="margin-top:14px"></div><div class="panel hidden" id="batch" style="margin-top:14px"></div></section></div>`;
   let cur = null, trace = null, meta = null, total = 1, upd = () => { }, vs = [], liveJob = null, tabSel = mem.get("an_tab") || "summary", lastRender = 0;
   const pv = $("#pv"), note = $("#pst");
@@ -148,6 +148,12 @@ async function vAnalysis(q) {
   /* ---------- переходы по тревогам, скорость, горячие клавиши */
   const jump = dir => { const al = (trace && trace.alerts) || []; if (!al.length) return toast("Тревог нет"); const c = pv.currentTime;
     const nx = dir > 0 ? al.find(a => a.start - 1 > c + 0.3) : [...al].reverse().find(a => a.start - 1 < c - 1.0); if (nx) seek(nx.start); else toast(dir > 0 ? "Больше тревог нет" : "Раньше тревог нет"); };
+  $("#saveVid").onclick = async () => {
+    if (!cur) return toast("Выберите видео"); if (!trace || !trace.frames || !trace.frames.length) return toast("Сначала запустите анализ — сохраняется его результат");
+    const b = $("#saveVid"); b.disabled = true; b.textContent = "Сохраняю…";
+    try { const r = await POST("/api/export-video", { video: cur.id, profile: meta ? meta.profile : $("#prof").value });
+      toast(`Сохранено: ${r.path} (${r.size_mb} МБ)`); const a = document.createElement("a"); a.href = r.url; a.download = r.name; document.body.appendChild(a); a.click(); a.remove(); }
+    catch (e) { toast("Не удалось сохранить: " + e.message); } finally { b.disabled = false; b.textContent = "💾 Видео с разметкой"; } };
   $("#nextA").onclick = () => jump(1); $("#prevA").onclick = () => jump(-1); $("#rate").onchange = () => { pv.playbackRate = +$("#rate").value; };
   onKey(e => { if (typing(e)) return; if (e.code === "Space") { e.preventDefault(); pv.paused ? pv.play().catch(() => { }) : pv.pause(); } else if (e.key === "ArrowRight") pv.currentTime += 5; else if (e.key === "ArrowLeft") pv.currentTime -= 5;
     else if (e.key === "]") jump(1); else if (e.key === "[") jump(-1); else if (e.key.toLowerCase() === "b") $("#tBox").click(); else if (e.key.toLowerCase() === "k") $("#tKp").click(); });
