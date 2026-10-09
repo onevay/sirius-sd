@@ -79,6 +79,16 @@ def _annotate(img: np.ndarray, dets: list, active: list[AlertUpdate], gt_label: 
     return out
 
 
+def _kp_flat(kp) -> list:
+    """Ключевые точки человека → плоский список [x, y, conf·100, …] (целые px и проценты): компактно для трассы и живого потока; пусто, если точек нет."""
+    if kp is None:
+        return []
+    k = np.asarray(kp, float)
+    if k.ndim != 2 or k.shape[1] < 3:
+        return []
+    return [v for x, y, c in k[:, :3] for v in (int(round(x)), int(round(y)), int(round(max(0.0, min(1.0, c)) * 100)))]
+
+
 def _box_row(u: AlertUpdate, frame_hw) -> tuple:
     b = u.box or (np.nan,) * 4
     if frame_hw and np.isfinite(b).all():
@@ -152,7 +162,7 @@ def replay_video(video: str | Path, profile: Profile, *, start: float = 0.0, end
             fr = _annotate(img, eng.last_dets, act, gl, t)
             writer.write(fr[: fr.shape[0] - fr.shape[0] % 2, : fr.shape[1] - fr.shape[1] % 2])
         ms.append((time.perf_counter() - t0) * 1000)
-        row = [round(t, 3), [[int(tid), *(round(float(v), 1) for v in b)] for tid, b in eng.last_dets]]
+        row = [round(t, 3), [[int(tid), *(round(float(v), 1) for v in b), _kp_flat(kp)] for (tid, b), kp in zip(eng.last_dets, eng.last_kps or [None] * len(eng.last_dets))]]
         trace_frames.append(row)
         if on_frame:
             on_frame(row, eng.frame_hw, eng)     # живой вывод: клиент рисует рамки по мере обработки

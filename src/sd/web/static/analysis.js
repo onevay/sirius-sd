@@ -1,5 +1,8 @@
 "use strict";
 /* Анализ видео: источники (папки, загрузка), живой разбор моделью, итог, триггеры, уверенность, люди */
+/* скелет COCO-17: рёбра и стиль точек (нос, запястья — крупнее: по ним считаются жест и расстояние до рта) */
+const SKEL = [[5, 6], [5, 7], [7, 9], [6, 8], [8, 10], [5, 11], [6, 12], [11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [0, 1], [0, 2], [1, 3], [2, 4], [0, 5], [0, 6]];
+const kpColor = c => c >= 70 ? "#86d6a4" : c >= 40 ? "#e8b873" : "#ee8383";
 const RULES = { two_cycles: "два цикла подряд в окне регламента", "cycle+object": "цикл + предмет у рта", cycle_object: "цикл + предмет у рта", cycle_plus_object: "цикл + предмет у рта" };
 const ruleText = r => RULES[r] || r || "—";
 const sigChips = c => {
@@ -34,20 +37,20 @@ async function vAnalysis(q) {
   let [folders, profiles] = await Promise.all([J("/api/folders"), J("/api/profiles")]);
   const ready = profiles.filter(p => p.ready);
   view.innerHTML = `<div class="an">
-    <aside class="panel" style="display:flex;flex-direction:column;gap:12px">
-      <select id="folder"></select>
+    <aside class="panel" style="display:flex;flex-direction:column;gap:12px;padding:16px">
+      <h3 style="margin:0">Видео</h3><select id="folder"></select>
       <div id="vlist" class="vlist"></div>
-      <div class="dz" id="dz">Перетащите видео сюда или нажмите, чтобы выбрать<br><span class="small">любые форматы: mp4, avi, mkv, mov, wmv, webm, ts…</span><input type="file" id="file" accept="video/*,.mkv,.avi,.wmv,.ts,.mov,.m4v,.webm" multiple class="hidden"></div>
+      <div class="dz" id="dz">Перетащите видео или нажмите, чтобы выбрать<br><span class="small">mp4, avi, mkv, mov, wmv, webm, ts…</span><input type="file" id="file" accept="video/*,.mkv,.avi,.wmv,.ts,.mov,.m4v,.webm" multiple class="hidden"></div>
       <div id="upl" class="small"></div>
-      <div class="row" style="flex-wrap:nowrap"><input id="rootPath" type="text" placeholder="Путь к папке с видео" style="flex:1;min-width:0"><button id="addRoot" title="Подключить папку">+</button></div>
-      <select id="prof">${profOptions(profiles)}</select>
-      <div id="pinfo" class="mut small"></div>
-      <label class="row small" style="gap:8px;flex-wrap:nowrap"><input type="checkbox" id="live" checked><span>В реальном времени: видео идёт вместе с моделью, рамки и тревоги сразу</span></label>
-      <button class="primary" id="run">▶ Смотреть с анализом</button><button id="runAll" title="Быстрый анализ всех видео папки без просмотра">Всю папку (быстро)</button>
-      <div class="prog hidden" id="prog"><i></i></div><div id="jstat" class="mut small"></div></aside>
-    <section><div class="panel" style="padding:0;overflow:hidden"><div class="vwrap" id="pw"><video id="pv" controls muted playsinline></video><canvas id="ov"></canvas></div><div class="timeline" id="tl"></div>
+      <div class="row" style="flex-wrap:nowrap"><input id="rootPath" type="text" placeholder="Путь к папке с видео" style="flex:1;min-width:0"><button id="addRoot" title="Подключить папку">+</button></div></aside>
+    <section>
+      <div class="panel" style="padding:14px 16px;margin-bottom:14px"><div class="runbar" style="margin:0"><select id="prof" class="sel">${profOptions(profiles)}</select>
+        <label class="row small" style="gap:7px;flex-wrap:nowrap" title="Видео идёт вместе с моделью: рамки, точки и тревоги появляются сразу"><input type="checkbox" id="live" checked>в реальном времени</label>
+        <button class="primary" id="run">▶ Смотреть с анализом</button><button id="runAll" title="Быстрый анализ всех видео папки без просмотра">Вся папка</button></div>
+        <div id="pinfo" class="mut small" style="margin-top:8px"></div><div class="prog hidden" id="prog" style="margin-top:8px"><i></i></div><div id="jstat" class="mut small" style="margin-top:4px"></div></div>
+      <div class="panel" style="padding:0;overflow:hidden"><div class="vwrap" id="pw"><video id="pv" controls muted playsinline></video><canvas id="ov"></canvas></div><div class="timeline" id="tl"></div>
       <div class="toolbar"><button id="prevA" title="[">◀ тревога</button><button id="nextA" title="]">тревога ▶</button><select class="pill" id="rate"><option value="0.5">×0.5</option><option value="1" selected>×1</option><option value="2">×2</option><option value="4">×4</option></select>
-        <label><input type="checkbox" id="tBox" checked> рамки</label><label><input type="checkbox" id="tGt" checked> разметка</label><span class="grow mut small" id="pst"></span></div></div>
+        <label title="B"><input type="checkbox" id="tBox" checked> рамки</label><label title="K"><input type="checkbox" id="tKp" checked> точки трекера</label><label><input type="checkbox" id="tGt" checked> разметка</label><span class="grow mut small" id="pst"></span></div></div>
       <div class="panel hidden" id="res" style="margin-top:14px"></div><div class="panel hidden" id="batch" style="margin-top:14px"></div></section></div>`;
   let cur = null, trace = null, meta = null, total = 1, upd = () => { }, vs = [], liveJob = null, tabSel = mem.get("an_tab") || "summary", lastRender = 0;
   const pv = $("#pv"), note = $("#pst");
@@ -63,9 +66,9 @@ async function vAnalysis(q) {
   const loadList = async () => {
     const fid = $("#folder").value; if (!fid) { $("#vlist").innerHTML = `<div class="mut" style="padding:10px">Папок с видео нет. Загрузите файл или подключите папку.</div>`; return; }
     mem.set("an_folder", fid); vs = await J("/api/videos?folder=" + fid);
-    $("#vlist").innerHTML = vs.map(v => { const a = v.analysis; return `<div class="camrow ${cur && cur.id === v.id ? "sel" : ""}" data-id="${v.id}"><div class="grow"><b>${esc(v.name)}</b>
+    $("#vlist").innerHTML = vs.map(v => { const a = v.analysis; return `<div class="vitem ${cur && cur.id === v.id ? "sel" : ""}" data-id="${v.id}"><div class="grow"><b>${esc(v.name)}</b>
       <div class="mut small">${v.duration ? mmss(v.duration) : "—"}${a ? ` · <span class="${a.alerts ? "err" : ""}">тревог: ${a.alerts ?? "?"}</span>${a.f1 != null ? ` · F1 ${a.f1.toFixed(2)}` : ""}` : ""}</div></div></div>`; }).join("") || `<div class="mut" style="padding:10px">Видео нет</div>`;
-    $$("#vlist .camrow").forEach(r => r.onclick = () => select(vs.find(v => v.id === r.dataset.id)));
+    $$("#vlist .vitem").forEach(r => r.onclick = () => select(vs.find(v => v.id === r.dataset.id)));
   };
   /* ---------- загрузка и подключение источников */
   const upload = async files => {
@@ -84,7 +87,7 @@ async function vAnalysis(q) {
   /* ---------- выбор видео и результаты */
   const select = async v => {
     liveJob = null; cur = v; trace = null; meta = null; $("#res").classList.add("hidden"); $("#jstat").textContent = ""; total = v.duration || 1; history.replaceState(null, "", `#/analysis?vid=${v.id}`);
-    $$("#vlist .camrow").forEach(r => r.classList.toggle("sel", r.dataset.id === v.id));
+    $$("#vlist .vitem").forEach(r => r.classList.toggle("sel", r.dataset.id === v.id));
     upd = timeline($("#tl"), total, [], s => { pv.currentTime = s; }); note.textContent = ""; pinfo();
     pv.dataset.retried = ""; await loadVideo(pv, { id: v.id }, note);
     const a = await J("/api/analysis?video=" + v.id); if (a.trace) setAnalysis(a.trace, a.meta); else note.textContent = note.textContent || "Разбора ещё нет — нажмите «Смотреть с анализом».";
@@ -147,7 +150,7 @@ async function vAnalysis(q) {
     const nx = dir > 0 ? al.find(a => a.start - 1 > c + 0.3) : [...al].reverse().find(a => a.start - 1 < c - 1.0); if (nx) seek(nx.start); else toast(dir > 0 ? "Больше тревог нет" : "Раньше тревог нет"); };
   $("#nextA").onclick = () => jump(1); $("#prevA").onclick = () => jump(-1); $("#rate").onchange = () => { pv.playbackRate = +$("#rate").value; };
   onKey(e => { if (typing(e)) return; if (e.code === "Space") { e.preventDefault(); pv.paused ? pv.play().catch(() => { }) : pv.pause(); } else if (e.key === "ArrowRight") pv.currentTime += 5; else if (e.key === "ArrowLeft") pv.currentTime -= 5;
-    else if (e.key === "]") jump(1); else if (e.key === "[") jump(-1); else if (e.key.toLowerCase() === "b") $("#tBox").click(); });
+    else if (e.key === "]") jump(1); else if (e.key === "[") jump(-1); else if (e.key.toLowerCase() === "b") $("#tBox").click(); else if (e.key.toLowerCase() === "k") $("#tKp").click(); });
   /* ---------- оверлей: рамки, баннер тревоги, текущая уверенность */
   const cv = $("#ov");
   const paint = () => {
@@ -173,9 +176,16 @@ async function vAnalysis(q) {
     const fr = trace.frames; let lo = 0, hi = fr.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; fr[m][0] < t ? lo = m + 1 : hi = m; }
     let k = lo; if (k > 0 && Math.abs(fr[k - 1][0] - t) < Math.abs(fr[k][0] - t)) k--; if (Math.abs(fr[k][0] - t) > 2.5 / (trace.fps || 5)) return;
     const [fh, fw] = trace.frame_hw || [pv.videoHeight, pv.videoWidth], sx = cw / (fw || pv.videoWidth || 1), sy = ch / (fh || pv.videoHeight || 1);
-    for (const [tid, x1, y1, x2, y2] of fr[k][1]) {
-      const al = live.find(a => a.tid === tid), isHot = !!al; g.lineWidth = isHot ? 3 : 1.5; g.strokeStyle = isHot ? "#ff5a5f" : "rgba(255,255,255,.85)"; g.strokeRect(ox + x1 * sx, oy + y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
-      const lbl = isHot ? `ID ${tid} · ${pct(al.confidence)}` : `ID ${tid}`; g.font = "12px system-ui"; const tw = g.measureText(lbl).width + 8; g.fillStyle = isHot ? "#ff5a5f" : "rgba(0,0,0,.6)"; g.fillRect(ox + x1 * sx, Math.max(0, oy + y1 * sy - 18), tw, 18); g.fillStyle = "#fff"; g.fillText(lbl, ox + x1 * sx + 4, Math.max(13, oy + y1 * sy - 5));
+    const showKp = $("#tKp").checked;
+    for (const [tid, x1, y1, x2, y2, kp] of fr[k][1]) {
+      const al = live.find(a => a.tid === tid), isHot = !!al; g.lineWidth = isHot ? 3 : 1.5; g.strokeStyle = isHot ? "#ee8383" : "rgba(255,255,255,.75)"; g.strokeRect(ox + x1 * sx, oy + y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
+      const lbl = isHot ? `ID ${tid} · ${pct(al.confidence)}` : `ID ${tid}`; g.font = "12px system-ui"; const tw = g.measureText(lbl).width + 8; g.fillStyle = isHot ? "#ee8383" : "rgba(0,0,0,.6)"; g.fillRect(ox + x1 * sx, Math.max(0, oy + y1 * sy - 18), tw, 18); g.fillStyle = "#fff"; g.fillText(lbl, ox + x1 * sx + 4, Math.max(13, oy + y1 * sy - 5));
+      if (showKp && kp && kp.length >= 51) {
+        const P = i => [ox + kp[i * 3] * sx, oy + kp[i * 3 + 1] * sy, kp[i * 3 + 2]]; g.lineWidth = 2; g.lineCap = "round";
+        for (const [a, b] of SKEL) { const p = P(a), q = P(b); if (p[2] < 25 || q[2] < 25) continue; g.strokeStyle = isHot ? "rgba(238,131,131,.85)" : "rgba(134,214,164,.7)"; g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke(); }
+        const nose = P(0); for (const w of [9, 10]) { const p = P(w); if (p[2] >= 25 && nose[2] >= 25 && isHot) { g.setLineDash([4, 4]); g.strokeStyle = "rgba(232,184,115,.9)"; g.lineWidth = 1.5; g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(nose[0], nose[1]); g.stroke(); g.setLineDash([]); } }
+        for (let i = 0; i < 17; i++) { const p = P(i); if (p[2] < 25) continue; const big = i === 0 || i === 9 || i === 10; g.fillStyle = kpColor(p[2]); g.beginPath(); g.arc(p[0], p[1], big ? 4.5 : 3, 0, 6.3); g.fill(); if (big) { g.strokeStyle = "#0008"; g.lineWidth = 1; g.stroke(); } }
+      }
     }
   };
   let raf = 0; const loop = () => { paint(); raf = requestAnimationFrame(loop); }; loop(); S.cleanup.push(() => cancelAnimationFrame(raf));

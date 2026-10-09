@@ -60,6 +60,9 @@ class WebApp:
         self._roots_file = self.out / "roots.json"
         for r in self._load_roots():
             self.roots[r["key"]] = Path(r["path"])
+        from .tuning import Tuning
+
+        self.tuning = Tuning(self)
         self.jobs: dict[str, Job] = {}
         self._q: queue.Queue = queue.Queue()
         self._worker: threading.Thread | None = None

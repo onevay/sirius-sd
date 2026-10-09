@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -26,7 +26,7 @@
       <div class="grow"></div>
       <div class="head-tools">
         <div class="search"><span class="ico" data-i="search"></span><input id="search" placeholder="Поиск места" autocomplete="off"><button class="go" id="searchGo" aria-label="Найти"><span data-i="chev"></span></button><div class="suggest hidden" id="suggest"></div></div>
-        <span class="vsep"></span>
+        <button class="circle" id="theme" title="Светлая / тёмная тема" aria-label="Тема"><span data-i="moon"></span></button>
         <a class="circle bell" href="#/alerts" title="Тревоги" id="bell"><span data-i="bell"></span><b class="dotbadge hidden" id="pendingBadge">0</b></a>
         <input id="operator" class="op" placeholder="Оператор" aria-label="Имя оператора">
       </div>
@@ -39,6 +39,7 @@
 <script src="/map.js"></script>
 <script src="/analysis.js"></script>
 <script src="/admin.js"></script>
+<script src="/tune.js"></script>
 <script src="/main.js"></script>
 </body>
 </html>

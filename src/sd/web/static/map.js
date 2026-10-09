@@ -95,13 +95,13 @@ function svgMap(shown, select, note) {
   };
   const markers = () => {
     const list = shown(); layout(list); let g = "";
-    const w = W(), h = H(); for (let x = 0; x < w; x += 70) g += `<line x1="${x}" y1="0" x2="${x + 40}" y2="${h}" stroke="#1d1d1f" stroke-width="2"/>`; for (let y = 0; y < h; y += 70) g += `<line x1="0" y1="${y}" x2="${w}" y2="${y - 30}" stroke="#1d1d1f" stroke-width="2"/>`;
+    const w = W(), h = H(); for (let x = 0; x < w; x += 70) g += `<line x1="${x}" y1="0" x2="${x + 40}" y2="${h}" style="stroke:var(--line)" stroke-width="1.5" opacity=".55"/>`; for (let y = 0; y < h; y += 70) g += `<line x1="0" y1="${y}" x2="${w}" y2="${y - 30}" style="stroke:var(--line)" stroke-width="1.5" opacity=".55"/>`;
     list.forEach((c, i) => { const [x, y] = pos[c.camera_id], hor = i % 2 === 0, [x1, y1, x2, y2] = hor ? [x - 120, y, x + 120, y] : [x, y - 90, x, y + 90];
-      g += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#3a3a3d" stroke-width="7" stroke-linecap="round"/><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#262628" stroke-width="4" stroke-linecap="round"/>
-      <text x="${hor ? x - 110 : x + 14}" y="${hor ? y - 12 : y - 70}" fill="#8b8b90" font-size="12">${esc(c.street)}</text>`; });
+      g += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="stroke:var(--card2)" stroke-width="9" stroke-linecap="round"/><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="stroke:var(--panel)" stroke-width="5" stroke-linecap="round"/>
+      <text x="${hor ? x - 110 : x + 14}" y="${hor ? y - 12 : y - 70}" style="fill:var(--mut)" font-size="12">${esc(c.street)}</text>`; });
     list.forEach(c => { const [x, y] = pos[c.camera_id], col = c.m.pending ? "#ff5a5f" : (c.n_chunks || c.alerts ? "#c9e04a" : "#7b7b80");
       g += `<g class="pin" data-id="${esc(c.camera_id)}" style="cursor:pointer"><title>${esc(c.title)}</title><circle cx="${x}" cy="${y}" r="30" fill="${col}" opacity=".22">${c.m.pending ? '<animate attributeName="r" values="22;38;22" dur="1.8s" repeatCount="indefinite"/>' : ""}</circle>
-      <circle cx="${x}" cy="${y}" r="11" fill="${col}"/>${S.sel.has(c.camera_id) ? `<circle cx="${x}" cy="${y}" r="17" fill="none" stroke="#fff" stroke-width="3"/>` : ""}</g>`; });
+      <circle cx="${x}" cy="${y}" r="11" fill="${col}"/>${S.sel.has(c.camera_id) ? `<circle cx="${x}" cy="${y}" r="17" fill="none" style="stroke:var(--ink)" stroke-width="3"/>` : ""}</g>`; });
     el.innerHTML = `<svg width="${w}" height="${h}">${g}</svg>`; $$(".pin", el).forEach(p => p.onclick = () => select(p.dataset.id));
   };
   const ro = new ResizeObserver(markers); ro.observe(el); S.cleanup.push(() => ro.disconnect());

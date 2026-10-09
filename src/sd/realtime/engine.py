@@ -185,6 +185,7 @@ class StreamEngine:
         self.stats = dict(frames=0, evals=0, cycles=0)
         self._prev_eval = -1e9
         self.last_dets: list[tuple[int, list[float]]] = []
+        self.last_kps: list[np.ndarray] = []      # ключевые точки людей последнего кадра (в порядке last_dets) — для вывода скелета
         self.cycle_log: list[dict] = []        # каждый оценённый цикл: оценка классификатора и сигналы (предмет, фото, fusion) — для вывода «почему сработало»
 
     # ------------------------------------------------------------------ вход
@@ -194,6 +195,7 @@ class StreamEngine:
             self.frame_hw = (int(img.shape[0]), int(img.shape[1]))
         dets = self.pose_fn(img, t)
         self.last_dets = [(int(d.tid), [float(x) for x in d.box]) for d in dets]        # для отрисовки поверх кадра (replay)
+        self.last_kps = [np.asarray(d.kp, np.float32) for d in dets]
         for d in dets:
             self._rows.append((self._n, t, int(d.tid), *[float(x) for x in d.box], float(d.score), float(d.box[3] - d.box[1])))
             self._kp.append(np.asarray(d.kp, np.float32))

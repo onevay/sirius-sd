@@ -18,12 +18,17 @@ async function uploadMany(files, out) {
 }
 
 /* ================================================================= МОДЕЛИ */
+const MTABS = [["profiles", "Профили"], ["classifier", "Классификатор"], ["validate", "Проверка на данных"], ["registry", "Модели и задачи"]];
+const modelTabs = tab => `<div class="pagetabs">${MTABS.map(([k, l]) => `<a href="#/models?tab=${k}" class="${k === tab ? "on" : ""}">${l}</a>`).join("")}</div>`;
 async function vModels(q) {
+  const tab = MTABS.some(t => t[0] === q.tab) ? q.tab : "profiles";
+  if (tab === "classifier") return vClassifier(q);
+  if (tab === "validate") return vValidate(q);
+  if (tab === "registry") { view.innerHTML = modelTabs(tab) + `<div class="panel" id="registry"></div><div class="panel" style="margin-top:16px" id="tasks"></div>`; const cat = await J("/api/catalog"); registryPanel(cat); tasksPanel(); return; }
   const [cat, all0] = await Promise.all([J("/api/catalog"), J("/api/profiles")]); const names0 = all0.filter(p => p.kind === "profile");
   let names = names0, cur = q.profile || mem.get("md_profile") || (names[0] && names[0].name), P = null, over = {}, opts = {}, orig = {};
-  view.innerHTML = `<div class="split" style="grid-template-columns:minmax(240px,300px) 1fr"><div class="panel"><div class="row" style="margin-bottom:10px"><h3 style="margin:0" class="grow">Профили</h3><button id="newP" class="primary" title="Новый профиль — копия выбранного">+</button></div><div class="plist" id="plist"></div>
-      <div id="importYaml" style="margin-top:12px"></div></div><div id="editor"></div></div>
-    <div class="panel" style="margin-top:16px" id="registry"></div><div class="panel" style="margin-top:16px" id="tasks"></div>`;
+  view.innerHTML = modelTabs("profiles") + `<div class="split" style="grid-template-columns:minmax(240px,300px) 1fr"><div class="panel"><div class="row" style="margin-bottom:10px"><h3 style="margin:0" class="grow">Профили</h3><button id="newP" class="primary" title="Новый профиль — копия выбранного">+</button></div><div class="plist" id="plist"></div>
+      <div id="importYaml" style="margin-top:12px"></div></div><div id="editor"></div></div>`;
   const listP = () => { $("#plist").innerHTML = names.map(p => `<div class="pitem ${p.name === cur ? "on" : ""}" data-n="${esc(p.name)}"><span class="led ${p.ready ? "ok" : "alert"}"></span><div class="grow"><b>${esc(p.name)}</b><div class="mut small">${p.kind === "solver" ? "решатель" : esc(p.describe.pose || "")}</div></div></div>`).join("") || `<div class="mut">Профилей нет</div>`;
     $$("#plist .pitem").forEach(e => e.onclick = () => { cur = e.dataset.n; mem.set("md_profile", cur); listP(); load(); }); };
   const reloadNames = async () => { names = (await J("/api/profiles")).filter(p => p.kind === "profile"); listP(); };
@@ -80,7 +85,7 @@ async function vModels(q) {
   };
   $("#newP").onclick = async () => { if (!cur) return toast("Нет профиля-образца"); const n = prompt("Имя нового профиля (копия выбранного)", cur + "_new"); if (!n) return; try { await POST(`/api/profile/${encodeURIComponent(cur)}/clone`, { to: n }); cur = n; await reloadNames(); load(); } catch (e) { toast(e.message); } };
   dropzone($("#importYaml"), "Импорт профиля: перетащите YAML", ".yaml,.yml", async ([f]) => { try { const p = await rawPost("/api/config/import", f, { name: f.name.replace(/\.ya?ml$/i, "") }); toast("Профиль импортирован: " + p.name); cur = p.name; await reloadNames(); load(); } catch (e) { toast(e.message); } });
-  listP(); await load(); registryPanel(cat); tasksPanel();
+  listP(); await load();
 }
 
 async function registryPanel(cat) {

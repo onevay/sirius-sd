@@ -246,6 +246,8 @@ def test_live_analysis_streams_frames_and_alerts(web, monkeypatch):
     assert seen_partial, "кадры должны приходить по мере обработки, а не одним куском"
     saved = jget(f"{base}/api/analysis?video={vid}")[1]
     assert len(saved["trace"]["frames"]) == 300 and saved["meta"]["n_alerts"] == 1
+    person = saved["trace"]["frames"][50][1][0]
+    assert len(person) == 6 and len(person[5]) == 17 * 3 and all(0 <= person[5][i] <= 100 for i in range(2, 51, 3))      # [tid, x1, y1, x2, y2, [x, y, conf%]×17]
 
 
 def _journal_run(root: Path, rid: str, profile, f1: float, fingerprint: str, failed: bool = False) -> None:

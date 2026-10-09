@@ -119,6 +119,20 @@ def make_handler(app: WebApp):
                 return self._json(app.stats())
             if p == "/api/cameras":
                 return self._json(app.cameras(float(q.get("hours", 0) or 0)))
+            if p == "/api/tune/table":
+                return self._json(app.tuning.table_info(q.get("enriched", "1") != "0", q.get("refresh") == "1"))
+            if m := re.fullmatch(r"/api/tune/bundle/([^/]+)", p):
+                return self._json(app.tuning.bundle_analysis(m.group(1), q.get("member", "oof_ensemble")))
+            if p == "/api/tune/experiments":
+                return self._json(app.tuning.experiments())
+            if m := re.fullmatch(r"/api/tune/experiment/([^/]+)", p):
+                return self._json(app.tuning.experiment_detail(m.group(1)))
+            if m := re.fullmatch(r"/api/tune/spec/([^/]+)", p):
+                from .. import classifier as CL
+
+                return self._json(CL.load_spec(m.group(1)))
+            if m := re.fullmatch(r"/api/op/(\w+)", p):
+                return self._json(app.tuning.op(m.group(1)).to_dict())
             if p == "/api/catalog":
                 return self._json(admin.catalog())
             if m := re.fullmatch(r"/api/profile/([^/]+)", p):
@@ -214,6 +228,24 @@ def make_handler(app: WebApp):
                     return self._json(app.submit(body["video"], body["profile"], bool(body.get("live"))).to_dict(), 202)
                 if p == "/api/demo":
                     return self._json(dict(n=app.demo(bool(body.get("clear")))))
+                if p == "/api/tune/spec/default":
+                    return self._json(app.tuning.default_spec(body.get("set", "obj_hold_zsd"), body.get("kinds") or [], body.get("enriched", True)))
+                if p == "/api/tune/spec/validate":
+                    return self._json(dict(problems=app.tuning.validate_spec(body["spec"], body.get("enriched", True))))
+                if p == "/api/tune/spec/save":
+                    from .. import classifier as CL
+
+                    sp = body["spec"]
+                    if not str(sp.get("name", "")).strip():
+                        raise ValueError("у спецификации нет имени")
+                    return self._json(dict(file=CL.save_spec(sp).name))
+                if p == "/api/tune/diagnose":
+                    return self._json(app.tuning.diagnose(body["spec"], int(body.get("n_perm", 3)), bool(body.get("importance", True)), body.get("enriched", True)).to_dict(), 202)
+                if p == "/api/tune/train":
+                    return self._json(app.tuning.train(body["spec"], str(body.get("name", "")).strip(), body.get("attach") or None, body.get("enriched", True)).to_dict(), 202)
+                if p == "/api/tune/eval":
+                    return self._json(app.tuning.evaluate(body["profile"], body["folders"], body.get("classifier"), body.get("mode", "events"), body.get("policy", "fixed"),
+                                                           bool(body.get("only_labeled", True)), float(body["max_sec"]) if body.get("max_sec") else None, int(body.get("n_boot", 200))).to_dict(), 202)
                 if p == "/api/root":
                     return self._json(app.add_root(body["path"]))
                 if p == "/api/root/remove":

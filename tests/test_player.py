@@ -47,3 +47,15 @@ def test_player_html_embeds_video_and_data_or_warns(tmp_path):
         assert warn3 and "не вшито" in warn3
     finally:
         PL.MAX_EMBED_MB = old
+
+
+def test_overlay_canvas_does_not_cover_the_video_and_height_fits():
+    """Регресс «Просмотр»: общий стиль `canvas{background:var(--panel)}` красил прозрачный холст с рамками белым поверх видео; высота iframe обрезала кнопки."""
+    from sd.ui import player as PL
+
+    data = PL.build_data(__import__("pandas").DataFrame(), __import__("pandas").DataFrame(), 30.0, 12.0)
+    html, _ = PL.player_html(None, data)
+    assert "#ov{" in html and "background:none!important" in html.split("#ov{", 1)[1].split("}", 1)[0]
+    small = PL.player_height(data)
+    data["tids"], data["gt"] = [1, 2, 3, 4], [{"start": 0, "end": 1, "label": "POSITIVE"}]
+    assert PL.player_height(data) > small >= 560

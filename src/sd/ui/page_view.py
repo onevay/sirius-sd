@@ -12,7 +12,7 @@ from sd import experiments as XP
 from sd import pipeline as P
 from sd import viewdata as VD
 from sd.paths import from_portable
-from sd.ui.player import build_data, player_html
+from sd.ui.player import build_data, player_height, player_html
 
 
 @st.cache_data(show_spinner=False)
@@ -82,7 +82,7 @@ def _experiment() -> None:
     data = build_data(cy, e, clip["duration"], 12.0, 0.0, gt=VD.gt_payload(gt, cid) if len(gt) else [], errors=VD.errors_payload(rep.errors, cid), tracks=tracks, src_size=src)
     data["offset"], data["duration"] = 0.0, float(max(clip["duration"] + clip["window"][0], 1.0))
     html = player_html(None, data, video_uri=uri)[0]
-    components.html(html, height=680, scrolling=False)
+    components.html(html, height=player_height(data), scrolling=False)
     if not tracks:
         st.caption("Рамок людей нет: для этого прогона не сохранены треки (кэш позы удалён).")
     errs = rep.errors[rep.errors.clip_id == cid] if len(rep.errors) else rep.errors
@@ -115,7 +115,7 @@ def _run_dir() -> None:
         st.warning("В этом прогоне нет overlay.mp4 (запуск без видео).")
     if warn:
         st.warning(warn)
-    components.html(html, height=720, scrolling=False)
+    components.html(html, height=player_height(data), scrolling=False)
     if len(ev):
         st.dataframe(ev, hide_index=True)
     with st.expander("Что запускалось"):

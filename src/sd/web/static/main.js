@@ -2,11 +2,12 @@
 /* Рейка навигации, маршрутизация, поиск места */
 const NAV = [["map", "Карта", "monitor"], ["analysis", "Анализ видео", "play"], ["models", "Модели и профили", "models"], ["transfer", "Передача и конфигурации", "send"]];
 const BOTTOM = ["sources", "Источники видео", "pin"];
-const mk = ([r, t, i]) => `<a class="ric" href="#/${r}" data-r="${r}" title="${t}">${IC[i]}</a>`;
+const SHORT = { map: "Карта", analysis: "Анализ", models: "Модели", transfer: "Передача", sources: "Источники" };
+const mk = ([r, t, i]) => `<a class="ric" href="#/${r}" data-r="${r}" title="${t}"><i>${IC[i]}</i>${SHORT[r]}</a>`;
 $("#nav").innerHTML = NAV.map(mk).join(""); $("#navBottom").innerHTML = mk(BOTTOM);
 const routes = { map: vMap, multi: vMulti, alerts: vAlerts, analysis: vAnalysis, models: vModels, transfer: vTransfer, sources: vSources };
 async function route() {
-  leave();
+  window.__routeSeq = (window.__routeSeq || 0) + 1; leave();
   let [path, qs] = (location.hash.slice(2) || "map").split("?");
   if (path === "video") path = "analysis";
   const name = routes[path] ? path : "map";

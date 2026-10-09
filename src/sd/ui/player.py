@@ -23,8 +23,8 @@ _HTML = r"""<!doctype html><html><head><meta charset="utf-8"><style>
 .wrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:10px;padding:8px}
 @media (max-width:760px){.wrap{grid-template-columns:1fr}}
 .vw{position:relative;background:#000;border-radius:6px;overflow:hidden}
-video{width:100%;max-height:460px;background:#000;display:block}
-#ov{position:absolute;left:0;top:0;pointer-events:none}
+video{width:100%;max-height:420px;background:#000;display:block}
+#ov{position:absolute;left:0;top:0;pointer-events:none;background:none!important;border:0!important;border-radius:0;cursor:default}
 .bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
 button{background:var(--panel);color:var(--ink);border:1px solid var(--grid);border-radius:6px;padding:4px 9px;cursor:pointer;font:inherit}
 button:hover{border-color:var(--acc)}button.on{border-color:var(--acc);color:var(--acc)}
@@ -132,6 +132,12 @@ def build_data(cycles: pd.DataFrame, events: pd.DataFrame, duration: float, fps:
     tids = sorted({c["tid"] for c in cyc} | {e["tid"] for e in ev})
     return dict(cycles=cyc, events=ev, duration=float(duration), fps=float(fps) or 15.0, tids=tids, offset=float(offset), gt=gt or [], errors=errors or [], tracks=tracks or {},
                 src_w=int(src_size[0]), src_h=int(src_size[1]))
+
+
+def player_height(data: dict) -> int:
+    """Высота iframe под содержимое плеера: видео (≤ 420 px) + две строки кнопок + таймлайн по людям + подсказка. Фиксированные 680/720 px обрезали кнопки у видео с несколькими людьми."""
+    lanes = (1 if data.get("gt") else 0) + (1 if data.get("errors") else 0)
+    return 8 + 420 + 96 + (18 + 22 * (lanes + max(1, len(data.get("tids", [])))) + 6) + 52
 
 
 def player_html(video: str | Path | None, data: dict, timeline_height: int | None = None, video_uri: str | None = None) -> tuple[str, str | None]:

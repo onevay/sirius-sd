@@ -34,10 +34,16 @@ const IC = {
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="20" height="20"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   pack: '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="12" y="14" width="22" height="30" rx="3" fill="#e8e6e0" stroke="#bbb"/><path d="M12 22h22" stroke="#e55"/><rect x="16" y="6" width="3" height="10" fill="#e8e6e0" stroke="#bbb"/><rect x="22" y="4" width="3" height="12" fill="#e8e6e0" stroke="#bbb"/><rect x="28" y="7" width="3" height="9" fill="#e8e6e0" stroke="#bbb"/></svg>',
   clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="26" height="26"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>',
   warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 7.8-8 9-4.6-1.2-8-4.5-8-9V6z"/><path d="M12 8v5M12 16v.5"/></svg>',
   bolt: '<svg viewBox="0 0 24 24" fill="currentColor" width="26" height="26"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg>',
 };
 document.querySelectorAll("[data-i]").forEach(e => { e.innerHTML = IC[e.dataset.i] || ""; });
+/* тема: тёмная мягкая (по умолчанию) или светлая; выбор запоминается */
+const applyTheme = t => { document.documentElement.dataset.theme = t; $("#theme").innerHTML = t === "dark" ? IC.sun : IC.moon; mem.set("theme", t); };
+applyTheme(mem.get("theme") === "light" ? "light" : "dark");
+$("#theme").onclick = () => { applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"); if (window.__mapRestyle) window.__mapRestyle(); };
 
 /* ---------------------------------------------------------------- данные */
 async function refreshBase() {
@@ -93,3 +99,21 @@ function gaugeSvg(v, color = "#f6b44a") {
     <circle cx="95" cy="95" r="${R}" fill="none" stroke="#3a3a3d" stroke-width="12" stroke-linecap="round" stroke-dasharray="${arc} ${C}" transform="rotate(135 95 95)"/>
     <circle cx="95" cy="95" r="${R}" fill="none" stroke="url(#gg${Math.round(val * 100)})" stroke-width="12" stroke-linecap="round" stroke-dasharray="${arc * val} ${C}" transform="rotate(135 95 95)"/></svg>`;
 }
+
+/* ---------------------------------------------------------------- графики (SVG): линии, точки, вертикальные линии, полосы, столбцы */
+function chartSvg(el, o) {
+  const W = o.w || 1000, H = o.h || 230, L = o.L || 42, R = o.R || 10, T = o.T || 10, B = o.B || 24, x0 = o.xmin ?? 0, x1 = o.xmax ?? 1, y0 = o.ymin ?? 0, y1 = o.ymax ?? 1;
+  const X = x => L + (x - x0) / ((x1 - x0) || 1) * (W - L - R), Y = y => T + (1 - (y - y0) / ((y1 - y0) || 1)) * (H - T - B), fx = o.xfmt || (v => v), fy = o.yfmt || (v => Math.round(v * 100) + "%");
+  let g = "";
+  (o.yticks || [0, .25, .5, .75, 1]).forEach(v => { g += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" vector-effect="non-scaling-stroke"/><text x="3" y="${Y(v) + 4}">${fy(v)}</text>`; });
+  (o.xticks || []).forEach(v => { g += `<text x="${X(v)}" y="${H - 6}" text-anchor="middle">${fx(v)}</text>`; });
+  (o.bands || []).forEach(b => { g += `<rect x="${X(b.x0)}" y="${T}" width="${Math.max(2, X(b.x1) - X(b.x0))}" height="${H - T - B}" fill="${b.color}" opacity=".16"><title>${esc(b.tip || "")}</title></rect>`; });
+  (o.bars || []).forEach(b => { const bw = Math.max(2, (W - L - R) / Math.max(1, b.n) - 4); g += `<rect x="${X(b.x) - bw / 2}" y="${Y(b.y)}" width="${bw}" height="${Math.max(0, Y(y0) - Y(b.y))}" rx="2" fill="${b.color}" opacity="${b.op ?? .9}"><title>${esc(b.tip || "")}</title></rect>`; });
+  (o.series || []).forEach(s => { const pts = s.pts.filter(p => p[1] != null && isFinite(p[1]));
+    if (s.line !== false && pts.length > 1) g += `<polyline fill="none" stroke="${s.color}" stroke-width="${s.width || 2.2}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ""} stroke-linejoin="round" vector-effect="non-scaling-stroke" points="${pts.map(p => X(p[0]) + "," + Y(p[1])).join(" ")}"/>`;
+    if (s.dots) pts.forEach(p => { g += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${s.dots}" fill="${s.color}"><title>${esc(s.name || "")} ${esc(fx(p[0]))}: ${esc(fy(p[1]))}</title></circle>`; }); });
+  (o.vlines || []).forEach(v => { g += `<line x1="${X(v.x)}" x2="${X(v.x)}" y1="${T}" y2="${H - B}" stroke="${v.color}" stroke-width="1.6" ${v.dash ? `stroke-dasharray="${v.dash}"` : ""} vector-effect="non-scaling-stroke"/>${v.label ? `<text x="${X(v.x) + 4}" y="${T + 11}" style="fill:${v.color}">${esc(v.label)}</text>` : ""}`; });
+  el.setAttribute("viewBox", `0 0 ${W} ${H}`); el.setAttribute("preserveAspectRatio", "none"); el.innerHTML = g; el._x = X;
+  if (o.onClick) el.onclick = e => { const r = el.getBoundingClientRect(); o.onClick(x0 + ((e.clientX - r.left) / r.width * W - L) / (W - L - R) * (x1 - x0)); };
+}
+const legend = items => `<div class="legend">${items.map(([c, t]) => `<span><i style="background:${c}"></i>${esc(t)}</span>`).join("")}</div>`;
