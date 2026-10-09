@@ -197,3 +197,20 @@ def test_bundles_export_import_and_tasks(web):
     cat = jcall(f"{base}/api/tasks/catalog")[1]
     assert {"train_bundle", "enrich", "eval", "doctor"} <= {t["id"] for t in cat} and all("fields" in t for t in cat)
     assert jcall(f"{base}/api/task/start", {"task": "no_such_task"})[0] == 400
+
+
+def test_dev_ui_proxy_codec_env_and_non_browser_format(tmp_path, monkeypatch):
+    """Интерфейс разработчика (Streamlit): любой формат → копия, кодек выбирается SD_PROXY_CODEC (vp8 — для браузеров без H.264)."""
+    from sd import proxy as PX
+    from sd.ui import media as UM
+
+    src = tmp_path / "x.avi"
+    mkvid(src, "MJPG", n=15)
+    monkeypatch.setenv("SD_PROXY_CODEC", "vp8")
+    out = PX.ensure_proxy(src, root=tmp_path / "px")
+    assert out.suffix == ".webm" and out.stat().st_size > 100
+    monkeypatch.setattr(PX, "PROXY_DIR", tmp_path / "px2")
+    uri, warn = UM.media_src(src, static=False)
+    assert uri.startswith("data:video/webm;base64,") and warn is None
+    monkeypatch.delenv("SD_PROXY_CODEC")
+    assert PX.proxy_path(src).suffix == ".mp4"

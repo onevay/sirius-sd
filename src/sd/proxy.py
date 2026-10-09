@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -27,15 +28,17 @@ def ffmpeg_exe() -> str:
         return exe
 
 
-def proxy_path(video: str | Path, height: int = 480, fps: float = 12.0, codec: str = "h264", root: Path | None = None) -> Path:
+def proxy_path(video: str | Path, height: int = 480, fps: float = 12.0, codec: str | None = None, root: Path | None = None) -> Path:
+    codec = codec or os.environ.get("SD_PROXY_CODEC", "h264")          # vp8 — для браузеров без H.264 (Chromium на Linux)
     v = Path(video)
     st = v.stat()
     key = hashlib.md5(f"{portable(v)}|{st.st_size}|{st.st_mtime_ns}|{height}|{fps}|{codec}".encode()).hexdigest()[:8]
     return (root or PROXY_DIR) / f"{video_id(v)}_{key}.{'webm' if codec == 'vp8' else 'mp4'}"
 
 
-def ensure_proxy(video: str | Path, height: int = 480, fps: float = 12.0, codec: str = "h264", root: Path | None = None, timeout: float = 1800.0) -> Path:
+def ensure_proxy(video: str | Path, height: int = 480, fps: float = 12.0, codec: str | None = None, root: Path | None = None, timeout: float = 1800.0) -> Path:
     """Путь к копии (создаётся при первом обращении). `codec`: h264 (по умолчанию) | vp8 (webm: для браузеров без H.264)."""
+    codec = codec or os.environ.get("SD_PROXY_CODEC", "h264")
     out = proxy_path(video, height, fps, codec, root)
     if out.exists() and out.stat().st_size > 0:
         return out

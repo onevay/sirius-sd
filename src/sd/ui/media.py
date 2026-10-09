@@ -59,6 +59,10 @@ def publish(path: str | Path, static_dir: Path | None = None) -> str:
 def media_src(path: str | Path, static: bool | None = None, static_dir: Path | None = None) -> tuple[str | None, str | None]:
     """(src для <video>, предупреждение). Выбор способа — по размеру и доступности статической раздачи."""
     p = Path(path)
+    if p.suffix.lower() not in (".mp4", ".m4v", ".webm"):      # wmv, avi, mkv, mov, ts … браузер не играет: берём копию (mp4/H.264 или webm по SD_PROXY_CODEC)
+        from sd.proxy import ensure_proxy
+
+        p = ensure_proxy(p)
     mb = p.stat().st_size / 1e6
     static = static_enabled() if static is None else static
     if mb <= EMBED_SMALL_MB or (not static and mb <= EMBED_MAX_MB):
