@@ -20,12 +20,13 @@ def test_ort_device_cpu_by_default():
     assert _ort_device({"device": "cuda"}) in ("cpu", "cuda")
 
 
-def test_machine_profiles_are_valid_and_differ():
-    cpu, gpu = PR.load("laptop_cpu"), PR.load("laptop_gpu4")
-    c, g = cpu.cfg(), gpu.cfg()
-    assert c["pose"]["runtime"] == "openvino" and c["pose"]["imgsz"] == 1280
-    assert g["pose"]["runtime"] == "torch" and g["pose"]["device"] == "cuda:0" and g["pose"]["imgsz"] >= 1600
-    assert g["evidence"]["device"] == "0" and g["pose"]["refine"]["device"] == "cuda"
-    assert cpu.fingerprint() != gpu.fingerprint()
-    assert cpu.opts()["cycle_bundle"] == gpu.opts()["cycle_bundle"]
-    assert cpu.threshold == gpu.threshold == 0.55
+def test_final_profile_is_valid_and_gpu_variant_is_an_override():
+    p = PR.load("mvp")
+    c = p.cfg()
+    assert c["pose"]["runtime"] == "openvino" and c["video"]["process_fps"] == 5 and c["pose"]["refine"]["gate_s"] == 3.0
+    assert c["evidence"]["runtime"] == "openvino" and p.opts()["objects"] == ["smoking_yolo11m_beehzod"] and p.threshold == 0.55
+    gpu = PR.with_overrides(p, ["pose.runtime=torch", "pose.device=cuda:0", "pose.imgsz=1600", "pose.weights=yolo26s-pose", "pose.refine.device=cuda", "evidence.runtime=torch", "evidence.device=0"])
+    g = gpu.cfg()
+    assert g["pose"]["device"] == "cuda:0" and str(g["evidence"]["device"]) == "0" and gpu.fingerprint() != p.fingerprint()
+    fast = PR.with_overrides(p, ["video.process_fps=10", "options.cycle_bundle=models/cycle/cycle_mvp10"])
+    assert fast.cfg()["video"]["process_fps"] == 10 and fast.opts()["cycle_bundle"].endswith("cycle_mvp10")

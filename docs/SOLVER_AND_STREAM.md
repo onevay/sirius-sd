@@ -1,5 +1,7 @@
 # Решатель (переносимый пакет), обязательный классификатор, слияние сигналов, replay
 
+> **Примечание (после слияния с рабочей веткой команды):** прежние профили `stream_gpu4`, `stream_cpu6`, `laptop_*`, `baseline` перенесены в `configs/experiments/archive/`; рабочая конфигурация — `configs/experiments/mvp.yaml` (см. [FINAL.md](FINAL.md)). Профиль из архива можно вернуть, скопировав файл в `configs/experiments/` (или импортировав YAML на экране «Передача»).
+
 Изменения 5-й итерации. Предыдущие: `AUDIT_AND_CHANGES.md`, `REALTIME.md`, `OPERATIONS.md`.
 
 ## 1. Решатель `*.sdsolver.zip`

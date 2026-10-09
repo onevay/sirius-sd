@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import os
 import mimetypes
 import re
 import threading
@@ -277,6 +278,8 @@ def serve(app: WebApp | None = None, host: str = "127.0.0.1", port: int = 8502, 
     app.allow_fs = host in ("127.0.0.1", "localhost", "::1")          # загрузка файлов и подключение папок — только на локальном сервере
     srv = ThreadingHTTPServer((host, port), make_handler(app))
     srv.daemon_threads = True
+    if os.environ.get("SD_WARM_MEDIA", "1") != "0" and block:          # копии для браузера (wmv/mkv/H.265) готовятся заранее, по одной
+        threading.Thread(target=app.warm_media, daemon=True, name="warm-media").start()
     if block:
         try:
             srv.serve_forever()

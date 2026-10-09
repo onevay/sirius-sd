@@ -52,7 +52,7 @@ def evidence_signature(cfg: dict, detectors: Sequence[str]) -> str:
             ws[d] = _sha(w)
         except Exception:   # noqa: BLE001 — нет весов: отпечаток без них (расчёт всё равно упадёт ниже)
             ws[d] = None
-    ev = {k: v for k, v in dict(cfg["evidence"]).items() if k != "detectors"}
+    ev = {k: v for k, v in dict(cfg["evidence"]).items() if k not in ("detectors", "device", "runtime")}      # где считается (CPU/iGPU/CUDA) на результат не влияет
     return stable_hash(dict(ev=ev, dets=ws), 12)
 
 
@@ -66,8 +66,23 @@ def _sha(path: Path) -> str:
     return h.hexdigest()[:16]
 
 
+def evidence_slot(dest: Path, sig: str) -> Path:
+    """Каталог кэша признаков предмета для отпечатка `sig`: основной (`dest`), если он свободен или уже принадлежит этому отпечатку, иначе `dest/alt_<отпечаток>`.
+    Раньше кэш принадлежал тому, кто записал первым, и всё, посчитанное другой конфигурацией (другие детекторы, частота кадров), пересчитывалось при каждом запуске."""
+    m = dest / "evidence_meta.json"
+    if not m.exists() or not (dest / "evidence_cycles.parquet").exists():
+        return dest
+    try:
+        if json.loads(m.read_text(encoding="utf-8")).get("signature") == sig:
+            return dest
+    except Exception:   # noqa: BLE001 — битый отпечаток: считаем каталог свободным для нового
+        return dest
+    return dest / f"alt_{sig}"
+
+
 def cached_evidence(cycles: pd.DataFrame, cfg: dict, detectors: Sequence[str], dest: Path) -> pd.DataFrame | None:
     """Строки признаков предмета для ВСЕХ `cycles` из кэша `dest`, если параметры и веса совпали (`evidence_meta.json`) и покрыты все циклы и детекторы; иначе None."""
+    dest = evidence_slot(dest, evidence_signature(cfg, detectors))
     f, m = dest / "evidence_cycles.parquet", dest / "evidence_meta.json"
     if not (f.exists() and m.exists()):
         return None
@@ -85,11 +100,10 @@ def cached_evidence(cycles: pd.DataFrame, cfg: dict, detectors: Sequence[str], d
 
 
 def save_evidence(rows: pd.DataFrame, cfg: dict, detectors: Sequence[str], dest: Path) -> None:
-    """Кладёт строки в кэш; чужой кэш с другим отпечатком не затирается (первый записавший владеет каталогом)."""
-    m = dest / "evidence_meta.json"
+    """Кладёт строки в кэш; чужой кэш с другим отпечатком не затирается — для другой конфигурации заводится соседний слот `alt_<отпечаток>`."""
     sig = evidence_signature(cfg, detectors)
-    if m.exists() and json.loads(m.read_text(encoding="utf-8")).get("signature") != sig:
-        return
+    dest = evidence_slot(dest, sig)
+    m = dest / "evidence_meta.json"
     dest.mkdir(parents=True, exist_ok=True)
     f = dest / "evidence_cycles.parquet"
     rows = rows.assign(start=rows.start.round(3))
@@ -104,8 +118,13 @@ def save_evidence(rows: pd.DataFrame, cfg: dict, detectors: Sequence[str], dest:
 def enrich_objects(cycles: pd.DataFrame, rd: Path, detectors: Sequence[str], dest: Path, cfg: dict | None = None) -> int:
     """Предмет по циклам одного запуска; возвращает число новых циклов. Если параметры/веса изменились (другой отпечаток), кэш пересчитывается целиком."""
     cfg = cfg or cfg_current_for_run(rd)
-    f, m = dest / "evidence_cycles.parquet", dest / "evidence_meta.json"
     sig = evidence_signature(cfg, detectors)
+    legacy_f = dest / "evidence_cycles.parquet"
+    if legacy_f.exists() and not (dest / "evidence_meta.json").exists():       # файл до появления отпечатков: принадлежит основному слоту
+        pass
+    else:
+        dest = evidence_slot(dest, sig)
+    f, m = dest / "evidence_cycles.parquet", dest / "evidence_meta.json"
     legacy = f.exists() and not m.exists()      # файл посчитан до появления отпечатка (тот же код и конфиг по умолчанию): принимаем и помечаем
     if legacy:
         dest.mkdir(parents=True, exist_ok=True)
@@ -230,19 +249,24 @@ def enrich_clips(clips: dict, objects: Sequence[str] = (), vlm_model: str | None
 
 
 def attach(tab: pd.DataFrame, clips: Sequence[str], root: Path = ROOT, vlm: bool = True) -> pd.DataFrame:
-    """Присоединяет предмет (`obj_any_*`) и VLM (`vlm_yesno`) к таблице циклов по ключу (video, tid, start); клипы без данных остаются с пропусками."""
+    """Присоединяет предмет (`obj_any_*`) и VLM (`vlm_yesno`) к таблице циклов по ключу (video, tid, start); клипы без данных остаются без этих колонок.
+    Признаки самого запуска (`analysis/` каталога запуска — `oof_eval.collect`) главнее кэша: кэш `enrich` принадлежит тому, кто записал его первым, и может быть посчитан другой
+    конфигурацией (другие детекторы, частота кадров) — подмешивать его поверх признаков запуска значит учить классификатор на чужих циклах. Кэш подставляется только клипам, у которых
+    признаков предмета в запуске нет вовсе."""
     from . import feature_auc as FA
 
     stale = [c for c in tab.columns if c.startswith(("obj_", "photo_", "vlm_", "xclip_", "videomae_")) or c == "n_det_frames"]
-    tab = tab.drop(columns=stale)          # кэш `enrich` — единственный источник этих признаков: колонки из analysis/ отдельных запусков (у части клипов есть, у части нет) только мешали бы слиянию
     parts = []
     for name in clips:
         t = tab[tab.video == name]
         d = clip_dir(name, root)
         if t.empty:
             continue
-        v = d / "vlm.parquet" if (vlm and (d / "vlm.parquet").exists()) else None
-        if (d / "evidence_cycles.parquet").exists() or v is not None:
-            t = FA._attach_features(t.assign(start=t.start.round(3)), d, v, only_vlm=False)
+        own = "obj_any_max_conf" in t.columns and bool(t["obj_any_max_conf"].notna().any())      # признаки предмета этого запуска уже в таблице
+        if not own:
+            t = t.drop(columns=[c for c in stale if c in t.columns])
+            v = d / "vlm.parquet" if (vlm and (d / "vlm.parquet").exists()) else None
+            if (d / "evidence_cycles.parquet").exists() or v is not None:
+                t = FA._attach_features(t.assign(start=t.start.round(3)), d, v, only_vlm=False)
         parts.append(t)
     return pd.concat(parts, ignore_index=True) if parts else tab

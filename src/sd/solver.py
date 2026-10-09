@@ -74,7 +74,7 @@ def describe_bundle(path: str | Path) -> dict:
     return dict(name=p.name, path=str(path), format=m.get("format"), created=m.get("created"), n_features=len(feats), groups={k: len(v) for k, v in groups.items()},
                 members={n: v.get("kind") for n, v in (m.get("members") or {}).items()}, calibrated=bool(m.get("calibrated")), n=m.get("n"), n_pos=m.get("n_pos"),
                 n_groups=m.get("n_groups"), auc_oof=cv.get("auc_ensemble_calibrated") or cv.get("auc_ensemble"), requires=dict(
-                    objects=required_detectors(feats), photo="photo" in groups, vlm="vlm" in groups, tube="tube" in groups))
+                    objects=required_detectors(feats), objects_any=any(OBJ_DET.match(x) for x in feats), photo="photo" in groups, photo_only_zsd=bool(groups.get("photo")) and all(f.startswith("photo_zsd_") for f in groups["photo"]), vlm="vlm" in groups, tube="tube" in groups))
 
 
 # ------------------------------------------------------------------------------------------ проверка совместимости
@@ -105,7 +105,7 @@ def _device_issues(profile: PR.Profile) -> list[Issue]:
 
             if not torch.cuda.is_available():
                 out.append(Issue("error", "device_cuda", f"профиль «{profile.name}» требует CUDA ({dev}), а на этой машине видеокарты NVIDIA с CUDA нет: возьмите профиль под CPU/OpenVINO "
-                                 "(laptop_cpu, stream_cpu6) или задайте pose.runtime=openvino, pose.device=intel:cpu"))
+                                 "(профиль mvp) или задайте pose.runtime=openvino, pose.device=intel:cpu"))
         except ImportError:
             out.append(Issue("error", "device_cuda", "для CUDA нужен torch, он не установлен"))
     if rt == "openvino" or dev.startswith("intel"):
@@ -150,6 +150,8 @@ def check(profile: PR.Profile, mode: str = "offline", devices: bool = False) -> 
         bundle_vlm = bool(req["vlm"])
         have = set(o["objects"] or [])
         lack = [x for x in req["objects"] if x not in have]
+        if req["objects_any"] and not have and not lack:
+            issues.append(Issue("error", "objects_missing", "классификатор использует признаки предмета `obj_any_*` (максимум по детекторам), а в профиле нет ни одного детектора предмета: признаки были бы пропусками, оценки циклов — около 0.3, тревог не было бы"))
         if lack:
             issues.append(Issue("error", "objects_missing", f"классификатор использует признаки предмета детекторов {lack}, а в профиле их нет: признаки станут пропусками, качество упадёт. Добавьте детекторы в options.objects"))
         if req["photo"] and not o["photo_bundle"]:
@@ -158,9 +160,9 @@ def check(profile: PR.Profile, mode: str = "offline", devices: bool = False) -> 
             issues.append(Issue("error", "vlm_required", "признаки VLM входят в вектор классификатора: нужен vlm_model и vlm_mode=all (VLM считается для каждого цикла). Либо возьмите базовый классификатор без VLM и подключите VLM через fusion"))
         if req["tube"]:
             issues.append(Issue("error", "tube_unsupported", "классификатор использует признаки видео-моделей (X-CLIP/VideoMAE): в `recognize` и потоке они не считаются"))
-        if mode == "live" and (req["objects"] or req["photo"] or req["vlm"]):
+        if mode == "live" and (req["objects"] or req["objects_any"] or req["photo"] or req["vlm"]):
             issues.append(Issue("error", "live_features", "в настоящем потоке доступны только признаки позы и паузы: пакет требует " + ", ".join(
-                x for x, on in (("предмет", bool(req["objects"])), ("фото-модель", req["photo"]), ("VLM", req["vlm"])) if on) + " — используйте replay по файлу или классификатор на быстрых признаках"))
+                x for x, on in (("предмет", bool(req["objects"] or req["objects_any"])), ("фото-модель", req["photo"]), ("VLM", req["vlm"])) if on) + " — используйте replay по файлу или классификатор на быстрых признаках"))
         elif mode == "replay" and req["vlm"]:
             issues.append(Issue("error", "replay_vlm", "признаки VLM в имитации потока не считаются (нужна очередь VLM); используйте классификатор без VLM"))
     try:

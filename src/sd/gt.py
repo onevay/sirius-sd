@@ -96,7 +96,14 @@ def save(df: pd.DataFrame, path: str | Path | None = None) -> Path:
     os.close(fd)
     try:
         df[COLUMNS].to_csv(tmp, index=False, encoding="utf-8-sig")
-        os.replace(tmp, p)
+        for attempt in range(8):           # Windows: антивирус/индексатор на мгновение держит файл — замена даёт PermissionError; повторяем, а не теряем правку
+            try:
+                os.replace(tmp, p)
+                break
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)

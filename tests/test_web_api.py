@@ -189,7 +189,7 @@ def test_real_job_reports_missing_models_as_error(web):
     from sd import profiles as PR
 
     app.profiles = lambda: [dict(name="heur", kind="profile", ready=True, problems=[], describe={})]
-    PR.save(PR.heuristic_profile().__class__(name="heur", options=dict(allow_heuristic=True)), Path(app.out) / "pr")
+    PR.save(PR.heuristic_profile().__class__(name="heur", options=dict(allow_heuristic=True), config={"pose.weights": "no-such-pose-weights"}), Path(app.out) / "pr")
     vid = jget(base + "/api/camera/pavlovsk-01")[1]["chunks"][0]["id"]
     import sd.profiles as profmod
     orig = profmod.load
@@ -246,3 +246,39 @@ def test_live_analysis_streams_frames_and_alerts(web, monkeypatch):
     assert seen_partial, "кадры должны приходить по мере обработки, а не одним куском"
     saved = jget(f"{base}/api/analysis?video={vid}")[1]
     assert len(saved["trace"]["frames"]) == 300 and saved["meta"]["n_alerts"] == 1
+
+
+def _journal_run(root: Path, rid: str, profile, f1: float, fingerprint: str, failed: bool = False) -> None:
+    d = root / rid
+    d.mkdir(parents=True)
+    clips = [dict(clip_id="c1", error="boom" if failed else None)]
+    (d / "meta.json").write_text(json.dumps(dict(id=rid, name=profile["name"], fingerprint=fingerprint, created="2026-10-09 10:00:00", mode="events", role="validation", profile=profile, clips=clips)), encoding="utf-8")
+    (d / "report.json").write_text(json.dumps(dict(mode="events", metrics=dict(f1=f1, precision=0.9, recall=0.7, tp=7, fp=1, fn=3, clips=5, threshold=0.55), ci=dict(f1=[f1 - 0.1, f1 + 0.1]))), encoding="utf-8")
+
+
+def test_journal_configs_are_selectable_with_quality(web, tmp_path, monkeypatch):
+    """Конфигурации, по которым уже считалась оценка, попадают в выбор с качеством; профиль восстанавливается из журнала, а не из файла."""
+    from sd import experiments as XP
+    from sd import profiles as PR
+
+    from sd import solver as SV
+
+    monkeypatch.setattr(SV, "_device_issues", lambda p: [])          # готовность не должна зависеть от устройств (openvino/CUDA) той машины, где идёт тест
+    app, base = web
+    root = tmp_path / "exp"
+    monkeypatch.setattr(XP, "EXP_DIR", root)
+    prof = PR.Profile(name="variant", config={"video.process_fps": 7}, options={"allow_heuristic": True})
+    _journal_run(root, "20261009_100000_variant", prof.to_dict(), 0.71, prof.fingerprint())
+    _journal_run(root, "20261009_090000_dead", PR.Profile(name="dead", options={"allow_heuristic": True}).to_dict(), 0.5, "x", failed=True)
+    cfgs = app.journal_configs()
+    assert [c["id"] for c in cfgs] == ["20261009_100000_variant"]                           # прогон, где упали все клипы, качества не имеет
+    p = next(x for x in app.profiles() if x["name"] == "run:20261009_100000_variant")
+    assert p["kind"] == "journal" and p["ready"] and p["quality"]["f1"] == 0.71 and p["quality"]["clips"] == 5 and "variant" in p["label"]
+    assert app.load_profile("run:20261009_100000_variant").cfg()["video"]["process_fps"] == 7
+    with pytest.raises(Exception):
+        app.load_profile("run:нет_такого")
+    # модели изменились после прогона → не выбирается (качество относилось бы к другой версии)
+    _journal_run(root, "20261009_110000_stale", prof.to_dict(), 0.9, "другой_отпечаток")
+    assert "run:20261009_110000_stale" not in {x["name"] for x in app.profiles()}
+    s, j = jget(base + "/api/profiles")
+    assert s == 200 and any(x["name"] == "run:20261009_100000_variant" for x in j)

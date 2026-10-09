@@ -1,0 +1,67 @@
+{
+ "kind": "cycle_classifier",
+ "format": 2,
+ "created": "2026-10-09 05:51:04",
+ "features": [
+  "dur",
+  "hold",
+  "obj_any_hit_frames",
+  "obj_any_max_conf",
+  "photo_zsd_max",
+  "photo_zsd_mean"
+ ],
+ "members": {
+  "lr_small": {
+   "kind": "logreg",
+   "features": [
+    "hold",
+    "dur",
+    "obj_any_max_conf"
+   ]
+  },
+  "lr_all": {
+   "kind": "logreg",
+   "features": [
+    "obj_any_max_conf",
+    "obj_any_hit_frames",
+    "hold",
+    "dur",
+    "photo_zsd_mean",
+    "photo_zsd_max"
+   ]
+  },
+  "gb": {
+   "kind": "lgbm",
+   "features": [
+    "obj_any_max_conf",
+    "obj_any_hit_frames",
+    "hold",
+    "dur",
+    "photo_zsd_mean",
+    "photo_zsd_max"
+   ],
+   "file": "lgbm_gb.txt"
+  }
+ },
+ "calibrated": false,
+ "n": 206,
+ "n_pos": 97,
+ "n_groups": 28,
+ "cv": {
+  "n_splits": 5,
+  "repeats": 5,
+  "auc_members": {
+   "lr_small": 0.82,
+   "lr_all": 0.8559,
+   "gb": 0.8257
+  },
+  "auc_ensemble": 0.8412,
+  "auc_ensemble_calibrated": null
+ },
+ "feature_set": "obj_hold_zsd",
+ "labels": "docs\\review\\gesture_gt.csv",
+ "label_source": "assistant_visual (суждения по кадрам, не эталон)",
+ "candidates": "циклы рабочего автомата полных запусков + метки жестов пула",
+ "vlm": null,
+ "note": "пакет собран для проверки механики и сравнения наборов; метрики — OOF по видео на малой выборке, не итоговое качество"
+}

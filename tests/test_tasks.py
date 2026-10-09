@@ -39,8 +39,9 @@ def test_status_states(tmp_path):
 
 
 def test_start_runs_and_finishes(tmp_path):
-    tid = T.start("gt_from_gestures", {"labeler": "x"}, tmp_path)       # реальный процесс `python -m sd …`; результат нас не волнует, важно завершение и код
-    for _ in range(90):
+    """Реальный процесс `python -m sd …`; берём команду без побочных эффектов (папки нет — быстро падает с ошибкой), чтобы тест не трогал данные и метки проекта."""
+    tid = T.start("eval", {"dirs": str(tmp_path / "нет_такой_папки"), "profile": "default"}, tmp_path)
+    for _ in range(120):
         s = T.status(tid, tmp_path)
         if s["state"] != "идёт":
             break

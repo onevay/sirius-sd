@@ -163,7 +163,7 @@ def render() -> None:
         rep, meta, ev, _ = XP.load_run(rid)
         st.subheader(f"Результат · {meta['name']}")
         report_view.show(rep, meta, rid, ev)
-    _history()
+    st.caption("Все прогоны, сравнение двух прогонов и варианты профиля — на странице «Журнал».")
 
 
 def _compare(ids: list[str]) -> None:
@@ -176,28 +176,3 @@ def _compare(ids: list[str]) -> None:
     df = pd.DataFrame(rows).sort_values("F1", ascending=False)
     st.subheader("Сравнение профилей на одних и тех же данных")
     st.dataframe(df, hide_index=True, column_config={"F1": st.column_config.ProgressColumn("F1", min_value=0, max_value=1, format="%.3f")})
-
-
-def _history() -> None:
-    runs = XP.list_runs()
-    with st.expander(f"Журнал экспериментов ({len(runs)})"):
-        if runs.empty:
-            st.caption("Пока пусто.")
-            return
-        show = runs[["created", "name", "mode", "role", "clips", "f1", "ci_lo", "ci_hi", "precision", "recall", "fp_per_hour", "threshold", "reached", "dirs", "pose", "cycle_model", "vlm", "id"]]
-        sel = st.dataframe(show, hide_index=True, on_select="rerun", selection_mode="single-row", key="hist",
-                           column_config={"f1": st.column_config.ProgressColumn("F1", min_value=0, max_value=1, format="%.3f")})
-        rows = sel["selection"]["rows"] if sel and sel.get("selection") else []
-        if rows:
-            rid = show.iloc[rows[0]]["id"]
-            c = st.columns(3)
-            if c[0].button("Показать"):
-                st.session_state["eval_last"] = [rid]
-                st.rerun()
-            if c[1].button("Открыть в просмотре"):
-                from sd.ui import nav
-
-                nav.go("view", view_src="Эксперимент", view_run=rid)
-            if c[2].button("Удалить прогон"):
-                XP.delete_run(rid)
-                st.rerun()

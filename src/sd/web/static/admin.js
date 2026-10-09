@@ -19,14 +19,14 @@ async function uploadMany(files, out) {
 
 /* ================================================================= МОДЕЛИ */
 async function vModels(q) {
-  const [cat, names0] = await Promise.all([J("/api/catalog"), J("/api/profiles")]);
+  const [cat, all0] = await Promise.all([J("/api/catalog"), J("/api/profiles")]); const names0 = all0.filter(p => p.kind === "profile");
   let names = names0, cur = q.profile || mem.get("md_profile") || (names[0] && names[0].name), P = null, over = {}, opts = {}, orig = {};
   view.innerHTML = `<div class="split" style="grid-template-columns:minmax(240px,300px) 1fr"><div class="panel"><div class="row" style="margin-bottom:10px"><h3 style="margin:0" class="grow">Профили</h3><button id="newP" class="primary" title="Новый профиль — копия выбранного">+</button></div><div class="plist" id="plist"></div>
       <div id="importYaml" style="margin-top:12px"></div></div><div id="editor"></div></div>
     <div class="panel" style="margin-top:16px" id="registry"></div><div class="panel" style="margin-top:16px" id="tasks"></div>`;
   const listP = () => { $("#plist").innerHTML = names.map(p => `<div class="pitem ${p.name === cur ? "on" : ""}" data-n="${esc(p.name)}"><span class="led ${p.ready ? "ok" : "alert"}"></span><div class="grow"><b>${esc(p.name)}</b><div class="mut small">${p.kind === "solver" ? "решатель" : esc(p.describe.pose || "")}</div></div></div>`).join("") || `<div class="mut">Профилей нет</div>`;
     $$("#plist .pitem").forEach(e => e.onclick = () => { cur = e.dataset.n; mem.set("md_profile", cur); listP(); load(); }); };
-  const reloadNames = async () => { names = await J("/api/profiles"); listP(); };
+  const reloadNames = async () => { names = (await J("/api/profiles")).filter(p => p.kind === "profile"); listP(); };
   const setCfg = (k, v) => { if (v === orig[k] && !(k in P.config)) delete over[k]; else over[k] = v; };
   const load = async () => {
     if (!cur) { $("#editor").innerHTML = `<div class="panel mut">Создайте профиль кнопкой «+».</div>`; return; }
@@ -123,7 +123,7 @@ async function tasksPanel() {
 
 /* ================================================================= ПЕРЕДАЧА */
 async function vTransfer(q) {
-  const [profiles, cat, R] = await Promise.all([J("/api/profiles"), J("/api/catalog"), J("/api/registry")]);
+  const [allp, cat, R] = await Promise.all([J("/api/profiles"), J("/api/catalog"), J("/api/registry")]); const profiles = allp.filter(p => p.kind === "profile");
   view.innerHTML = `<div class="cols" style="grid-template-columns:repeat(auto-fit,minmax(380px,1fr));align-items:start">
     <div class="panel"><h2>Упаковать решатель</h2><p class="mut small">Профиль целиком одним архивом: классификатор, метаданные архитектуры, по желанию веса и разметка. На другом компьютере — «Установить».</p>
       ${field("Профиль", `<select id="pk_prof">${opt(profiles.map(p => p.name), q.profile || mem.get("md_profile"))}</select>`)}${field("Классификатор (если нужно заменить)", `<select id="pk_cls"><option value="">как в профиле</option>${opt(cat.cycle, "")}</select>`)}${field("Имя решателя", `<input type="text" id="pk_name">`)}

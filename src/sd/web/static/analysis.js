@@ -23,6 +23,13 @@ function uploadOne(file, onProgress) {
   });
 }
 
+const qTxt = q => q ? `F1 ${q.f1 == null ? "—" : q.f1.toFixed(2)}${q.lo != null ? ` [${q.lo.toFixed(2)}–${q.hi.toFixed(2)}]` : ""} · P ${q.precision == null ? "—" : q.precision.toFixed(2)} / R ${q.recall == null ? "—" : q.recall.toFixed(2)} · ${q.clips} клип.` : "качество не измерялось";
+/* выбор конфигурации: профили, решатели и конфигурации, по которым уже считалась оценка (журнал), — каждая с качеством на размеченных клипах */
+const profOptions = ps => {
+  const o = p => `<option value="${esc(p.name)}">${p.ready ? "" : "⚠ "}${esc(p.label || p.name)}${p.kind === "solver" ? " · решатель" : ""} — ${qTxt(p.quality)}</option>`;
+  const g = (t, a) => a.length ? `<optgroup label="${t}">${a.map(o).join("")}</optgroup>` : "";
+  return (g("Профили и решатели", ps.filter(p => p.kind !== "journal")) + g("Уже прогонялись (из журнала оценок)", ps.filter(p => p.kind === "journal"))) || "<option value=''>нет профилей</option>";
+};
 async function vAnalysis(q) {
   let [folders, profiles] = await Promise.all([J("/api/folders"), J("/api/profiles")]);
   const ready = profiles.filter(p => p.ready);
@@ -33,7 +40,7 @@ async function vAnalysis(q) {
       <div class="dz" id="dz">Перетащите видео сюда или нажмите, чтобы выбрать<br><span class="small">любые форматы: mp4, avi, mkv, mov, wmv, webm, ts…</span><input type="file" id="file" accept="video/*,.mkv,.avi,.wmv,.ts,.mov,.m4v,.webm" multiple class="hidden"></div>
       <div id="upl" class="small"></div>
       <div class="row" style="flex-wrap:nowrap"><input id="rootPath" type="text" placeholder="Путь к папке с видео" style="flex:1;min-width:0"><button id="addRoot" title="Подключить папку">+</button></div>
-      <select id="prof">${profiles.map(p => `<option value="${esc(p.name)}">${p.ready ? "" : "⚠ "}${esc(p.name)}${p.kind === "solver" ? " · решатель" : ""}</option>`).join("") || "<option value=''>нет профилей</option>"}</select>
+      <select id="prof">${profOptions(profiles)}</select>
       <div id="pinfo" class="mut small"></div>
       <label class="row small" style="gap:8px;flex-wrap:nowrap"><input type="checkbox" id="live" checked><span>В реальном времени: видео идёт вместе с моделью, рамки и тревоги сразу</span></label>
       <button class="primary" id="run">▶ Смотреть с анализом</button><button id="runAll" title="Быстрый анализ всех видео папки без просмотра">Всю папку (быстро)</button>
@@ -49,7 +56,8 @@ async function vAnalysis(q) {
   const refreshFolders = async sel => { folders = await J("/api/folders"); fillFolders(sel); };
   const p0 = profiles.find(p => p.name === mem.get("an_profile") && p.ready) || ready[0] || profiles[0]; if (p0) $("#prof").value = p0.name;
   const pinfo = () => { const p = profiles.find(x => x.name === $("#prof").value); mem.set("an_profile", $("#prof").value);
-    $("#pinfo").innerHTML = !p ? "" : p.ready ? esc(Object.entries(p.describe).filter(([k]) => ["pose", "imgsz", "cycle_model", "fps"].includes(k)).map(([k, v]) => `${k}: ${v}`).join(" · ")) : `<span class="err">${p.problems.map(esc).join("<br>")}</span> <a href="#/models">Исправить в «Моделях»</a>`;
+    $("#pinfo").innerHTML = !p ? "" : (p.ready ? esc(Object.entries(p.describe).filter(([k]) => ["pose", "imgsz", "cycle_model", "fps"].includes(k)).map(([k, v]) => `${k}: ${v}`).join(" · ")) : `<span class="err">${p.problems.map(esc).join("<br>")}</span> ${p.kind === "profile" ? '<a href="#/models">Исправить в «Моделях»</a>' : ""}`)
+      + `<div><b>${esc(qTxt(p.quality))}</b>${p.quality ? ` · порог ${p.quality.threshold ?? "—"} · TP/FP/FN ${p.quality.tp}/${p.quality.fp}/${p.quality.fn}${p.quality.failed ? ` · ошибок клипов: ${p.quality.failed}` : ""}<br>оценка ${esc(String(p.quality.created || "").slice(0, 16))} на размеченных клипах` : ""}</div>`;
     $("#run").disabled = !p || !p.ready || !cur; $("#runAll").disabled = !p || !p.ready; };
   $("#prof").onchange = pinfo;
   const loadList = async () => {
@@ -145,7 +153,10 @@ async function vAnalysis(q) {
   const paint = () => {
     const w = pv.clientWidth, h = pv.clientHeight; if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
     const g = cv.getContext("2d"); g.clearRect(0, 0, w, h); const t = pv.currentTime; upd(t);
-    const cc = $("#ccur"), ch = $("#chart"); if (cc && ch && ch._x) { const x = ch._x(t); cc.setAttribute("x1", x); cc.setAttribute("x2", x); }
+    // кадр вписан в <video> с полями (object-fit: contain): рамки считаются от реального прямоугольника кадра, а не от всего элемента
+    const vw = pv.videoWidth || (trace && trace.frame_hw ? trace.frame_hw[1] : 16), vh = pv.videoHeight || (trace && trace.frame_hw ? trace.frame_hw[0] : 9);
+    const kk = Math.min(w / vw, h / vh), cw = vw * kk, ch = vh * kk, ox = (w - cw) / 2, oy = (h - ch) / 2; cv.style.left = pv.offsetLeft + "px"; cv.style.top = pv.offsetTop + "px";
+    const cc = $("#ccur"), chartEl = $("#chart"); if (cc && chartEl && chartEl._x) { const x = chartEl._x(t); cc.setAttribute("x1", x); cc.setAttribute("x2", x); }
     if (liveJob && liveJob.started) {        // видео не убегает от модели
       const lag = t - liveJob.horizon;
       if (!pv.paused && lag > 0.25) { pv.pause(); liveJob.waiting = true; } else if (liveJob.waiting && liveJob.horizon > t + 1.0) { liveJob.waiting = false; pv.play().catch(() => { }); }
@@ -157,14 +168,14 @@ async function vAnalysis(q) {
     if (lastC) chips.push([`цикл ID ${lastC.tid}: ${pct(lastC.score)}`, lastC.score >= (th.cycle ?? .5) ? "#f6b44a" : "#77777c"]);
     const hot = live.filter(a => t >= a.t_open - 1e-3); if (hot.length) { const a = hot.reduce((m, x) => x.confidence > m.confidence ? x : m); chips.push([`тревога ${pct(a.confidence)}`, "#ff5a5f"]); }
     if ($("#tGt").checked && (trace.gt || []).some(x => t >= x.start && t <= x.end)) chips.push(["разметка: курение", "#3aa66a"]);
-    g.font = "bold 13px system-ui"; let x = w - 10; chips.forEach(([txt, col]) => { const tw = g.measureText(txt).width + 18; x -= tw; g.fillStyle = col; g.beginPath(); g.roundRect(x, 10, tw, 26, 13); g.fill(); g.fillStyle = "#111"; g.fillText(txt, x + 9, 28); x -= 8; });
+    g.font = "bold 13px system-ui"; let x = ox + cw - 10; chips.forEach(([txt, col]) => { const tw = g.measureText(txt).width + 18; x -= tw; g.fillStyle = col; g.beginPath(); g.roundRect(x, oy + 10, tw, 26, 13); g.fill(); g.fillStyle = "#111"; g.fillText(txt, x + 9, oy + 28); x -= 8; });
     if (!$("#tBox").checked) return;
     const fr = trace.frames; let lo = 0, hi = fr.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; fr[m][0] < t ? lo = m + 1 : hi = m; }
     let k = lo; if (k > 0 && Math.abs(fr[k - 1][0] - t) < Math.abs(fr[k][0] - t)) k--; if (Math.abs(fr[k][0] - t) > 2.5 / (trace.fps || 5)) return;
-    const [fh, fw] = trace.frame_hw || [pv.videoHeight, pv.videoWidth], sx = w / (fw || pv.videoWidth || 1), sy = h / (fh || pv.videoHeight || 1);
+    const [fh, fw] = trace.frame_hw || [pv.videoHeight, pv.videoWidth], sx = cw / (fw || pv.videoWidth || 1), sy = ch / (fh || pv.videoHeight || 1);
     for (const [tid, x1, y1, x2, y2] of fr[k][1]) {
-      const al = live.find(a => a.tid === tid), isHot = !!al; g.lineWidth = isHot ? 3 : 1.5; g.strokeStyle = isHot ? "#ff5a5f" : "rgba(255,255,255,.85)"; g.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
-      const lbl = isHot ? `ID ${tid} · ${pct(al.confidence)}` : `ID ${tid}`; g.font = "12px system-ui"; const tw = g.measureText(lbl).width + 8; g.fillStyle = isHot ? "#ff5a5f" : "rgba(0,0,0,.6)"; g.fillRect(x1 * sx, Math.max(0, y1 * sy - 18), tw, 18); g.fillStyle = "#fff"; g.fillText(lbl, x1 * sx + 4, Math.max(13, y1 * sy - 5));
+      const al = live.find(a => a.tid === tid), isHot = !!al; g.lineWidth = isHot ? 3 : 1.5; g.strokeStyle = isHot ? "#ff5a5f" : "rgba(255,255,255,.85)"; g.strokeRect(ox + x1 * sx, oy + y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
+      const lbl = isHot ? `ID ${tid} · ${pct(al.confidence)}` : `ID ${tid}`; g.font = "12px system-ui"; const tw = g.measureText(lbl).width + 8; g.fillStyle = isHot ? "#ff5a5f" : "rgba(0,0,0,.6)"; g.fillRect(ox + x1 * sx, Math.max(0, oy + y1 * sy - 18), tw, 18); g.fillStyle = "#fff"; g.fillText(lbl, ox + x1 * sx + 4, Math.max(13, oy + y1 * sy - 5));
     }
   };
   let raf = 0; const loop = () => { paint(); raf = requestAnimationFrame(loop); }; loop(); S.cleanup.push(() => cancelAnimationFrame(raf));

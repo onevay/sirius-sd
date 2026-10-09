@@ -2,8 +2,7 @@
 [server]
 headless = true
 fileWatcherType = "none"            # после правок кода интерфейс перезапускают (как и раньше)
-enableStaticServing = true          # видео просмотра и разметки отдаются файлом по HTTP (с перемоткой), а не вшиваются в страницу base64: большие клипы иначе не показываются
-maxMessageSize = 400
+maxMessageSize = 200
 
 [browser]
 gatherUsageStats = false

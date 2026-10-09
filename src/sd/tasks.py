@@ -67,7 +67,8 @@ CATALOG: dict[str, TaskType] = {t.id: t for t in (
         Field("tag", "Метка результата", "text", "ui", "--tag"))),
     TaskType("eval", "Оценка профиля на папках (sd eval)", ("eval",), "Event F1 по эталону для профиля из configs/experiments; результат — в журнале страницы «Оценка».", (
         Field("dirs", "Папки с видео (по одной на строку)", "lines", "data/курение\ndata/лжекурение", "--dir"),
-        Field("profile", "Профиль", "text", "laptop_cpu", "--profile"),
+        Field("profile", "Профиль", "text", "mvp", "--profile"),
+        Field("clips", "Точечно: клипы (подстроки id через запятую; пусто — все)", "text", "", "--clips"),
         Field("policy", "Порог", "choice", "fixed", "--policy", choices=("fixed", "plateau", "best")))),
     TaskType("train_bundle", "Обучить пакет классификатора (sd train-bundle)", ("train-bundle",), "Командная версия страницы «Классификатор» (без диагностики).", (
         Field("name", "Имя пакета", "text", "cycle_new", None),

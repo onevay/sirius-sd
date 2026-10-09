@@ -183,6 +183,7 @@ class StreamEngine:
         self._emitted: dict[str, _Emitted] = {}
         self.threshold = float(cfg["events"]["confidence_threshold"])
         self.stats = dict(frames=0, evals=0, cycles=0)
+        self._prev_eval = -1e9
         self.last_dets: list[tuple[int, list[float]]] = []
         self.cycle_log: list[dict] = []        # каждый оценённый цикл: оценка классификатора и сигналы (предмет, фото, fusion) — для вывода «почему сработало»
 
@@ -241,6 +242,12 @@ class StreamEngine:
 
     def _evaluate(self, t_now: float, settle: float, final: bool = False) -> list[AlertUpdate]:
         self.stats["evals"] += 1
+        try:
+            return self._evaluate_inner(t_now, settle, final)
+        finally:
+            self._prev_eval = t_now
+
+    def _evaluate_inner(self, t_now: float, settle: float, final: bool = False) -> list[AlertUpdate]:
         tr = self._tracks()
         updates: list[AlertUpdate] = []
         if tr is not None:
@@ -249,10 +256,15 @@ class StreamEngine:
             buf_start = float(tr.frame_t.t.min())
             summ = tr.summary(min_h).set_index("tid")
             sers, new_cycles = [], []
+            idle = float(cfg["cycles"]["hold_cap_sec"]) + settle + self.eval_every + 3.0
             for tid in tr.tids:
                 if bool(summ.loc[tid, "ignore_small"]):
                     continue        # IGNORE: человек ниже min_person_height_px — событий не выдаём
                 rows, kp = tr.of(tid)
+                # трек, не обновлявшийся дольше `idle` к предыдущей оценке, новых циклов дать уже не может (его последний цикл дозрел), а ряд и автомат по всему буферу
+                # стоили бы секунду на каждого ушедшего человека при каждой оценке: в людном кадре это и был главный расход времени потока
+                if not final and float(rows.t.max()) < self._prev_eval - idle:
+                    continue
                 s = build_series(track_grid(tr.frame_t, int(rows.frame.min()), int(rows.frame.max())), rows, kp, cfg)
                 s.insert(0, "tid", tid)
                 sers.append(s)

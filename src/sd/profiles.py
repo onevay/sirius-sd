@@ -105,6 +105,28 @@ class Profile:
         return dict(name=self.name, description=self.description, **({"base": self.base} if self.base else {}), config=dict(self.config), options=dict(self.options))
 
 
+def with_overrides(p: Profile, sets: list[str] | None) -> Profile:
+    """Копия профиля с точечными правками `ключ=значение` (значение — YAML: число, true, строка, список): `video.process_fps=5`, `pose.refine.gate_s=3`, `options.objects=[a,b]`.
+    Ключи без префикса — параметры конфигурации (`configs/default.yaml`), с префиксом `options.` — опции профиля. Неизвестный ключ — ошибка до начала долгого прогона.
+    Нужна для быстрой «точечной» проверки гипотезы без правки файла профиля: изменения попадают в отпечаток и в журнал."""
+    if not sets:
+        return p
+    conf, opt = dict(p.config), dict(p.options)
+    for item in sets:
+        if "=" not in item:
+            raise ValueError(f"правка «{item}»: нужен вид ключ=значение")
+        k, v = item.split("=", 1)
+        val = yaml.safe_load(v)
+        if k.startswith("options."):
+            opt[k[len("options."):]] = val
+        else:
+            conf[k.strip()] = val
+    q = Profile(name=p.name, description=p.description, base=p.base, config=conf, options=opt)
+    q.cfg()          # неизвестные ключи конфигурации и опций обнаружатся здесь
+    q.opts()
+    return q
+
+
 def _abs(p: str | Path) -> Path:
     return repo_path(p)
 

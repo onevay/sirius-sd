@@ -1,0 +1,29 @@
+{
+ "kind": "photo_classifier",
+ "format": 1,
+ "backbones": [
+  "clip",
+  "convnext"
+ ],
+ "calibrated": true,
+ "size": 224,
+ "preprocess": "to_square_rgb (reflect pad) + per-backbone mean/std",
+ "sources": {
+  "Smoker Detection": 1120,
+  "smoking_vs_notsmoking_2400": 2010,
+  "stanford40_actions": 2316
+ },
+ "n": 5446,
+ "n_originals": 5446,
+ "n_pos": 1806,
+ "aug_variants": 0,
+ "seed": 0,
+ "oof_auc": 0.9901550691833084,
+ "oof_auc_by_source": {
+  "Smoker Detection": 0.9984757653061225,
+  "smoking_vs_notsmoking_2400": 0.9906309249771046,
+  "stanford40_actions": 0.9646133080037993
+ },
+ "created": "2026-10-07 18:33:06",
+ "note": "logreg(C=0.05, balanced) на нормированных эмбеддингах; калибровка — изотоническая по OOF среднего вероятностей; эмбеддинги считаются photo_feats (OpenVINO iGPU или torch)"
+}

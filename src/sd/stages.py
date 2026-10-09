@@ -27,7 +27,7 @@ from .features import build_series, kp_threshold, track_grid, visibility_fractio
 from .paths import OUTPUTS, portable, video_id
 from .pose_track import PoseTracker
 from .tracks import Tracks, stitch_tracks
-from .video_io import choose_stride, iter_frames, probe
+from .video_io import choose_stride, iter_frames, prefetch, probe
 
 Progress = Callable[[int, int], None] | None
 
@@ -35,7 +35,8 @@ Progress = Callable[[int, int], None] | None
 def run_id_for(cfg: dict, start: float, end: float | None) -> str:
     p, t = cfg["pose"], cfg["tracking"]
     span = f"{start:g}-{'end' if end is None else format(end, 'g')}s"
-    ref = f"_ref-{p['refine'].get('method', 'yolo')}" if p["refine"]["enabled"] else ""
+    rf = p["refine"]
+    ref = (f"_ref-{rf.get('method', 'yolo')}" + ("-ov" if rf.get("backend") == "openvino" else "") + (f"-h{int(rf['min_height_px'])}" if int(rf.get("min_height_px", 20)) != 20 else "") + (f"-g{rf['gate_s']:g}" if float(rf.get("gate_s", 0)) > 0 else "")) if rf["enabled"] else ""
     return (f"{span}_{p['weights']}_{p['runtime']}{'' if p['runtime'] == 'torch' else '-' + p['device'].split(':')[-1]}_{p['imgsz']}{ref}"
             f"_{t['tracker']}-{stable_hash(t, 4)}_{cfg['video']['process_fps']:g}fps")
 
@@ -115,7 +116,7 @@ def stage_pose(video: str | Path, cfg: dict, start: float = 0.0, end: float | No
     rows, kps, frame_t, raw = [], [], [], []
     t_wall = time.perf_counter()
     warmup = 0.0
-    for i, fr in enumerate(iter_frames(video, start, end, stride, max_frames)):
+    for i, fr in enumerate(prefetch(iter_frames(video, start, end, stride, max_frames))):
         frame_t.append((fr.idx, fr.t))
         for d in pt.step(fr.img, fr.t):
             rows.append((fr.idx, fr.t, d.tid, *d.box.tolist(), d.score, float(d.box[3] - d.box[1])))
@@ -140,6 +141,7 @@ def stage_pose(video: str | Path, cfg: dict, start: float = 0.0, end: float | No
     tr.save(pose_dir)
     pd.DataFrame(raw, columns=["frame", "t", "x1", "y1", "x2", "y2", "conf"]).to_parquet(pose_dir / "raw_dets.parquet", index=False)
     (rd / "run.json").write_text(json.dumps(dict(cfg=_plain(cfg), meta=tr.meta), ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    tr.meta["video"] = str(video)          # на диске путь переносимый ($DATA/…), в памяти — рабочий, как после `Tracks.load`: иначе признаки предмета в этом же процессе не открывали видео
     return tr, rd
 
 

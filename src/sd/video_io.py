@@ -114,6 +114,71 @@ def iter_frames(path: str | Path, start: float = 0.0, end: float | None = None, 
         cap.release()
 
 
+def window_frame_index(path: str | Path, t0: float, t1: float) -> tuple[np.ndarray, np.ndarray]:
+    """(номера кадров файла, их время) в окне [t0, t1] — только декодирование без преобразования цвета, по тем же правилам нумерации и монотонности времени, что у `iter_frames`
+    (в mkv/wmv метки времени неточны, поэтому `round(t * fps)` не годится). Стоит доли секунды на окно, а не проход по всему файлу."""
+    cap = open_video(path)
+    idx, ts = [], []
+    try:
+        if t0 and t0 > 0:
+            cap.set(cv2.CAP_PROP_POS_MSEC, t0 * 1000.0)
+        idx0 = int(round(cap.get(cv2.CAP_PROP_POS_FRAMES)))
+        fps = float(cap.get(cv2.CAP_PROP_FPS)) or 25.0
+        i, last = 0, -1.0
+        while cap.grab():
+            t = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+            if t <= last or (i == 0 and t == 0 and idx0 > 0):
+                t = (idx0 + i) / fps
+            last = t
+            if t > t1:
+                break
+            idx.append(idx0 + i)
+            ts.append(t)
+            i += 1
+    finally:
+        cap.release()
+    return np.asarray(idx, int), np.asarray(ts, float)
+
+
+def prefetch(it: Iterator, size: int = 6) -> Iterator:
+    """Декодирование в отдельном потоке: пока модель считает кадр, следующие уже читаются (cv2 отпускает GIL на grab/retrieve). Даёт ≈ 20–25 % времени на кадр при тех же результатах;
+    исключение источника пробрасывается потребителю, ранний выход из цикла останавливает поток."""
+    import queue
+    import threading
+
+    q: queue.Queue = queue.Queue(maxsize=size)
+    stop = threading.Event()
+    end = object()
+
+    def work() -> None:
+        try:
+            for x in it:
+                while not stop.is_set():
+                    try:
+                        q.put(x, timeout=0.2)
+                        break
+                    except queue.Full:
+                        continue
+                if stop.is_set():
+                    return
+            q.put(end)
+        except BaseException as e:   # noqa: BLE001 — передаём потребителю
+            q.put(e)
+
+    t = threading.Thread(target=work, daemon=True, name="frame-prefetch")
+    t.start()
+    try:
+        while True:
+            x = q.get()
+            if x is end:
+                return
+            if isinstance(x, BaseException):
+                raise x
+            yield x
+    finally:
+        stop.set()
+
+
 def read_frame_at(path: str | Path, t: float) -> Frame | None:
     for fr in iter_frames(path, start=max(0.0, t), stride=1, max_frames=1):
         return fr

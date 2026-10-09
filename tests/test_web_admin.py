@@ -210,7 +210,7 @@ def test_dev_ui_proxy_codec_env_and_non_browser_format(tmp_path, monkeypatch):
     out = PX.ensure_proxy(src, root=tmp_path / "px")
     assert out.suffix == ".webm" and out.stat().st_size > 100
     monkeypatch.setattr(PX, "PROXY_DIR", tmp_path / "px2")
-    uri, warn = UM.media_src(src, static=False)
+    uri, warn = UM.media_src(src)
     assert uri.startswith("data:video/webm;base64,") and warn is None
     monkeypatch.delenv("SD_PROXY_CODEC")
     assert PX.proxy_path(src).suffix == ".mp4"

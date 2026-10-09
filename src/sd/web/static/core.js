@@ -57,14 +57,17 @@ const srcQuery = s => s.alert ? `alert=${s.alert}` : `id=${s.id}`;
 const srcUrl = (s, f) => s.alert ? `/media/clip/${s.alert}?fmt=${f}` : `/media/video/${s.id}?fmt=${f}`;
 async function loadVideo(video, src, note, fmt = FMT, t0 = 0) {
   if (typeof src === "string") src = { id: src };
-  const say = (txt, bad) => { if (note) { note.textContent = txt; note.classList.toggle("err", !!bad); } };
+  // пока видео готовится или не открылось, в окне плеера — понятная надпись, а не пустой чёрный прямоугольник
+  const wrap = video.parentElement; let ph = wrap && wrap.querySelector(".vph"); if (wrap && !ph) { ph = document.createElement("div"); ph.className = "vph"; wrap.appendChild(ph); }
+  const say = (txt, bad) => { if (note) { note.textContent = txt; note.classList.toggle("err", !!bad); } if (ph) { ph.textContent = txt || ""; ph.classList.toggle("err", !!bad); ph.style.display = txt ? "flex" : "none"; } };
+  say("Загрузка видео…");
   video.removeAttribute("src"); video.load(); video.onerror = null;
   for (let i = 0; i < 3600; i++) {
     if (!document.body.contains(video)) return false;
     let st; try { st = await J(`/api/media-status?${srcQuery(src)}&fmt=${fmt}`); } catch (e) { say("Видео недоступно: " + e.message, true); return false; }
     if (st.state === "direct" || st.state === "ready") break;
     if (st.state === "error") { say("Не удалось подготовить видео: " + st.error, true); return false; }
-    say(`Подготовка видео для браузера… ${Math.round(st.pct * 100)}%`);
+    say(`Подготовка видео для браузера (перекодирование, один раз)… ${st.pct > 0 ? Math.round(st.pct * 100) + "%" : "идёт"}`);
     await new Promise(r => setTimeout(r, 700));
   }
   return new Promise(res => {
