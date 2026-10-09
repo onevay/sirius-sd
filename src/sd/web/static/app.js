@@ -40,14 +40,17 @@ addEventListener("hashchange", route);
 /* ---------------------------------------------------------------- вывод видео: формат выбирает браузер, сбой не молчит */
 const FMT = (() => { const v = document.createElement("video"); return v.canPlayType('video/mp4; codecs="avc1.42E01E"') ? "h264" : (v.canPlayType('video/webm; codecs="vp9"') ? "vp9" : "h264"); })();
 async function loadVideo(video, vid, note, fmt = FMT, t0 = 0) {
-  const say = (txt, bad) => { if (note) { note.textContent = txt; note.classList.toggle("err", !!bad); } };
+  // пока видео готовится или не открылось, в окне плеера — понятная надпись, а не пустой серый прямоугольник
+  const wrap = video.parentElement; let ph = wrap && wrap.querySelector(".vph"); if (wrap && !ph) { ph = document.createElement("div"); ph.className = "vph"; wrap.appendChild(ph); }
+  const say = (txt, bad) => { if (note) { note.textContent = txt; note.classList.toggle("err", !!bad); } if (ph) { ph.textContent = txt || ""; ph.classList.toggle("err", !!bad); ph.style.display = txt ? "flex" : "none"; } };
+  say("Загрузка видео…");
   video.removeAttribute("src"); video.load(); video.onerror = null;
   for (let i = 0; i < 1800; i++) {
     if (!document.body.contains(video)) return false;
     let st; try { st = await J(`/api/media-status?id=${vid}&fmt=${fmt}`); } catch (e) { say("Видео недоступно: " + e.message, true); return false; }
     if (st.state === "direct" || st.state === "ready") break;
     if (st.state === "error") { say("Не удалось подготовить видео: " + st.error, true); return false; }
-    say(`Подготовка видео для браузера… ${Math.round(st.pct * 100)}%`);
+    say(`Подготовка видео для браузера (перекодирование, один раз)… ${st.pct > 0 ? Math.round(st.pct * 100) + "%" : "идёт"}`);
     await new Promise(r => setTimeout(r, 700));
   }
   return new Promise(res => {
@@ -219,6 +222,13 @@ async function vAlerts(q) {
 }
 
 /* ---------------------------------------------------------------- разбор видео моделью */
+const qTxt = q => q ? `F1 ${q.f1 == null ? "—" : q.f1.toFixed(2)}${q.lo != null ? ` [${q.lo.toFixed(2)}–${q.hi.toFixed(2)}]` : ""} · P ${q.precision == null ? "—" : q.precision.toFixed(2)} / R ${q.recall == null ? "—" : q.recall.toFixed(2)} · ${q.clips} клип.` : "качество не измерялось";
+/* выбор конфигурации: профили из файлов и конфигурации, по которым уже считалась оценка (журнал), — каждая с качеством на размеченных клипах */
+const profOptions = ps => {
+  const opt = p => `<option value="${esc(p.name)}">${p.ready ? "" : "⚠ "}${esc(p.label || p.name)}${p.kind === "solver" ? " · решатель" : ""} — ${p.quality ? qTxt(p.quality) : "качество не измерялось"}</option>`;
+  const g = (t, a) => a.length ? `<optgroup label="${t}">${a.map(opt).join("")}</optgroup>` : "";
+  return (g("Профили и решатели", ps.filter(p => p.kind !== "journal")) + g("Уже прогонялись (из журнала оценок)", ps.filter(p => p.kind === "journal"))) || "<option value=''>нет профилей</option>";
+};
 async function vAnalysis(q) {
   const [folders, profiles] = await Promise.all([J("/api/folders"), J("/api/profiles")]);
   if (!folders.length) { view.innerHTML = `<div class="card pad mut">Видео нет. Положите папки с видео в каталог потоков (SD_STREAMS) или данных (SD_DATA).</div>`; return; }
@@ -226,7 +236,7 @@ async function vAnalysis(q) {
   view.innerHTML = `<div class="an">
     <aside class="card pad"><select id="folder">${folders.map(f => `<option value="${f.id}">${esc(f.name)} (${f.n})</option>`).join("")}</select>
       <div id="vlist" class="vlist"></div>
-      <select id="prof">${profiles.map(p => `<option value="${esc(p.name)}">${p.ready ? "" : "⚠ "}${esc(p.name)}${p.kind === "solver" ? " · решатель" : ""}</option>`).join("") || "<option value=''>нет профилей</option>"}</select>
+      <select id="prof">${profOptions(profiles)}</select>
       <div id="pinfo" class="mut small"></div>
       <label class="row small" style="gap:6px"><input type="checkbox" id="live" checked> В реальном времени: видео идёт вместе с моделью, рамки и тревоги сразу</label>
       <button class="primary" id="run">▶ Смотреть с анализом</button><button id="runAll" title="Быстрый анализ всех видео папки без просмотра">Всю папку (быстро)</button><div class="prog hidden" id="prog"><i></i></div><div id="jstat" class="mut small"></div></aside>
@@ -241,7 +251,8 @@ async function vAnalysis(q) {
   // профиль: ранее выбранный, иначе первый готовый
   const pick0 = profiles.find(p => p.name === remembered && p.ready) || ready[0] || profiles[0]; if (pick0) $("#prof").value = pick0.name;
   const pinfo = () => { const p = profiles.find(x => x.name === $("#prof").value); mem.set("an_profile", $("#prof").value);
-    $("#pinfo").innerHTML = !p ? "" : p.ready ? esc(Object.entries(p.describe).filter(([k]) => ["pose", "imgsz", "cycle_model", "fps"].includes(k)).map(([k, v]) => `${k}: ${v}`).join(" · ")) : `<span class="err">${p.problems.map(esc).join("<br>")}</span>`;
+    $("#pinfo").innerHTML = !p ? "" : (p.ready ? esc(Object.entries(p.describe).filter(([k]) => ["pose", "imgsz", "cycle_model", "fps"].includes(k)).map(([k, v]) => `${k}: ${v}`).join(" · ")) : `<span class="err">${p.problems.map(esc).join("<br>")}</span>`)
+      + `<div><b>${esc(qTxt(p.quality))}</b>${p.quality ? ` · порог ${p.quality.threshold ?? "—"} · TP/FP/FN ${p.quality.tp}/${p.quality.fp}/${p.quality.fn}${p.quality.failed ? ` · ошибок клипов: ${p.quality.failed}` : ""}<br>оценка ${esc(String(p.quality.created || "").slice(0, 16))} на размеченных клипах (метки ассистента)` : ""}</div>`;
     $("#run").disabled = !p || !p.ready || !cur; $("#runAll").disabled = !p || !p.ready; };
   $("#prof").onchange = pinfo;
   const loadList = async () => {
@@ -281,6 +292,11 @@ async function vAnalysis(q) {
   const paint = () => {
     const w = pv.clientWidth, h = pv.clientHeight; if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
     const g = cv.getContext("2d"); g.clearRect(0, 0, w, h); upd(pv.currentTime);
+    // кадр внутри элемента <video> вписан с полями (object-fit: contain): рамки считаются от реального прямоугольника кадра, а не от всего элемента — иначе при высоком окне/другом
+    // соотношении сторон они съезжают; сам холст ставится ровно поверх элемента
+    const vw = pv.videoWidth || (trace && trace.frame_hw ? trace.frame_hw[1] : 16), vh = pv.videoHeight || (trace && trace.frame_hw ? trace.frame_hw[0] : 9);
+    const k = Math.min(w / vw, h / vh), cw = vw * k, ch = vh * k, ox = (w - cw) / 2, oy = (h - ch) / 2;
+    cv.style.left = pv.offsetLeft + "px"; cv.style.top = pv.offsetTop + "px";
     if (liveJob && liveJob.started) {        // видео не убегает от модели: ждём, пока она посчитает до текущей секунды
       const lag = pv.currentTime - liveJob.horizon;
       if (!pv.paused && lag > 0.25) { pv.pause(); liveJob.waiting = true; }
@@ -289,19 +305,19 @@ async function vAnalysis(q) {
     }
     if (!trace || !trace.frames.length) return;
     const t = pv.currentTime, live = (trace.alerts || []).filter(a => t >= a.start && t <= a.end + 1);
-    if (live.some(a => t >= a.t_open - 1e-3)) { g.fillStyle = "rgba(217,45,32,.92)"; g.fillRect(0, 0, w, 26); g.fillStyle = "#fff"; g.font = "bold 14px system-ui"; g.fillText("ТРЕВОГА: курение", 10, 18); }
-    if (($("#tGt").checked) && (trace.gt || []).some(x => t >= x.start && t <= x.end)) { g.fillStyle = "rgba(18,128,60,.9)"; g.fillRect(0, h - 22, 150, 22); g.fillStyle = "#fff"; g.font = "12px system-ui"; g.fillText("разметка: курение", 8, h - 7); }
+    if (live.some(a => t >= a.t_open - 1e-3)) { g.fillStyle = "rgba(217,45,32,.92)"; g.fillRect(ox, oy, cw, 26); g.fillStyle = "#fff"; g.font = "bold 14px system-ui"; g.fillText("ТРЕВОГА: курение", ox + 10, oy + 18); }
+    if (($("#tGt").checked) && (trace.gt || []).some(x => t >= x.start && t <= x.end)) { g.fillStyle = "rgba(18,128,60,.9)"; g.fillRect(ox, oy + ch - 22 - 40, 150, 22); g.fillStyle = "#fff"; g.font = "12px system-ui"; g.fillText("разметка: курение", ox + 8, oy + ch - 7 - 40); }
     if (!$("#tBox").checked) return;
     const fr = trace.frames; let lo = 0, hi = fr.length - 1;
     while (lo < hi) { const m = (lo + hi) >> 1; fr[m][0] < t ? lo = m + 1 : hi = m; }
     let k = lo; if (k > 0 && Math.abs(fr[k - 1][0] - t) < Math.abs(fr[k][0] - t)) k--;
     if (Math.abs(fr[k][0] - t) > 2.5 / (trace.fps || 5)) return;
-    const [fh, fw] = trace.frame_hw || [pv.videoHeight, pv.videoWidth], sx = w / (fw || pv.videoWidth || 1), sy = h / (fh || pv.videoHeight || 1);
+    const [fh, fw] = trace.frame_hw || [pv.videoHeight, pv.videoWidth], sx = cw / (fw || pv.videoWidth || 1), sy = ch / (fh || pv.videoHeight || 1);
     for (const [tid, x1, y1, x2, y2] of fr[k][1]) {
       const al = live.find(a => a.tid === tid), hot = !!al;
-      g.lineWidth = hot ? 3 : 1.5; g.strokeStyle = hot ? "#ff3b30" : "rgba(255,255,255,.85)"; g.strokeRect(x1 * sx, y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
+      g.lineWidth = hot ? 3 : 1.5; g.strokeStyle = hot ? "#ff3b30" : "rgba(255,255,255,.85)"; g.strokeRect(ox + x1 * sx, oy + y1 * sy, (x2 - x1) * sx, (y2 - y1) * sy);
       const lbl = hot ? `ID ${tid} · ${Math.round(al.confidence * 100)}%` : `ID ${tid}`; g.font = "12px system-ui"; const tw = g.measureText(lbl).width + 8;
-      g.fillStyle = hot ? "#ff3b30" : "rgba(0,0,0,.55)"; g.fillRect(x1 * sx, Math.max(0, y1 * sy - 18), tw, 18); g.fillStyle = "#fff"; g.fillText(lbl, x1 * sx + 4, Math.max(13, y1 * sy - 5));
+      g.fillStyle = hot ? "#ff3b30" : "rgba(0,0,0,.55)"; g.fillRect(ox + x1 * sx, Math.max(0, oy + y1 * sy - 18), tw, 18); g.fillStyle = "#fff"; g.fillText(lbl, ox + x1 * sx + 4, Math.max(13, oy + y1 * sy - 5));
     }
   };
   let raf = 0; const loop = () => { paint(); raf = requestAnimationFrame(loop); }; loop(); S.cleanup.push(() => cancelAnimationFrame(raf));

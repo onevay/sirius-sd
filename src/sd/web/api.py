@@ -128,6 +128,24 @@ class WebApp:
         p = self.resolve(vid)
         return media.playable(p, fmt, float(self.info(p).get("duration") or 0.0))
 
+    def warm_media(self, fmt: str = "h264", pause: float = 0.5) -> int:
+        """Заранее готовит копии для браузера всех видео, которые он не играет напрямую (wmv, mkv, H.265): по одной, в фоне. Первый просмотр такого видео иначе ждал бы минуты перекодирования
+        с пустым экраном. Возвращает число подготовленных копий."""
+        import time as _t
+
+        n = 0
+        for f in self.folders():
+            for v in self.videos(f["id"]):
+                try:
+                    st = self.media_for(v["id"], fmt)
+                    while st["state"] == "preparing":
+                        _t.sleep(pause)
+                        st = self.media_for(v["id"], fmt)
+                    n += st["state"] == "ready"
+                except Exception:
+                    continue
+        return n
+
     # ------------------------------------------------------------------ камеры (карта)
     def cameras(self) -> list[dict]:
         ov = geo.load_overrides(self.roots["streams"])
@@ -209,26 +227,96 @@ class WebApp:
         return self.store.delete_demo() if clear else seed_demo(self.store)
 
     # ------------------------------------------------------------------ анализ видео моделью
+    def journal_configs(self) -> list[dict]:
+        """Конфигурации, по которым уже считалась оценка (журнал `outputs/experiments`): по одной на отпечаток профиля (последний прогон), с качеством на клипах. Профиль восстанавливается
+        из журнала целиком (конфиг + опции), поэтому выбрать можно и вариант, который не сохранён файлом (например, запущенный с `-s video.process_fps=10`)."""
+        from .. import experiments as XP
+
+        out: dict[str, dict] = {}
+        base = XP.EXP_DIR
+        for f in sorted(base.glob("*/meta.json"), reverse=True) if base.exists() else []:
+            try:
+                m = json.loads(f.read_text(encoding="utf-8"))
+                r = json.loads((f.parent / "report.json").read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            mt, ci = r.get("metrics") or {}, (r.get("ci") or {}).get("f1") or [None, None]
+            fp = m.get("fingerprint")
+            if not fp or fp in out or mt.get("f1") is None or not m.get("profile"):
+                continue
+            n_fail = sum(1 for c in m.get("clips", []) if c.get("error"))
+            if m.get("clips") and n_fail == len(m["clips"]):
+                continue                      # ни один клип не обработан: качества нет
+            out[fp] = dict(id=m["id"], fingerprint=fp, profile=m["profile"], created=m.get("created"), mode=r.get("mode"), role=m.get("role"),
+                           quality=dict(f1=mt.get("f1"), lo=ci[0], hi=ci[1], precision=mt.get("precision"), recall=mt.get("recall"), tp=mt.get("tp"), fp=mt.get("fp"), fn=mt.get("fn"),
+                                        clips=mt.get("clips") or len(m.get("clips", [])), failed=n_fail, threshold=mt.get("threshold"), created=m.get("created"), run=m["id"], mode=r.get("mode")))
+        return list(out.values())
+
+    def _profile_from_journal(self, rid: str):
+        from .. import experiments as XP
+        from .. import profiles as PR
+
+        f = XP.EXP_DIR / rid / "meta.json"
+        if not f.exists():
+            raise NotFound(f"прогон {rid}")
+        p = json.loads(f.read_text(encoding="utf-8"))["profile"]
+        return PR.Profile(name=p.get("name") or rid, description=p.get("description", ""), base=p.get("base"), config=p.get("config") or {}, options=p.get("options") or {})
+
     def profiles(self) -> list[dict]:
+        """Профили из файлов, установленные решатели и конфигурации из журнала оценок (`run:<id>`). Каждой, по которой считалась оценка, приложено качество (`quality`)."""
         from .. import profiles as PR
         from .. import solver as SV
+
+        journal = self.journal_configs()
+        by_fp = {c["fingerprint"]: c for c in journal}
+        used: set[str] = set()
+
+        def entry(name, kind, p, label=None, quality=None):
+            try:
+                iss = SV.check(p, "replay", devices=True)
+                return dict(name=name, kind=kind, label=label or name, ready=not any(i.level == "error" for i in iss), problems=[i.text for i in iss if i.level == "error"],
+                            describe=p.describe(), quality=quality)
+            except Exception as e:
+                return dict(name=name, kind=kind, label=label or name, ready=False, problems=[str(e)], describe={}, quality=quality)
 
         out = []
         for n in PR.list_profiles():
             try:
                 p = PR.load(n)
-                iss = SV.check(p, "replay", devices=True)
-                out.append(dict(name=n, kind="profile", ready=not any(i.level == "error" for i in iss), problems=[i.text for i in iss if i.level == "error"], describe=p.describe()))
+                fp = p.fingerprint()
             except Exception as e:
-                out.append(dict(name=n, kind="profile", ready=False, problems=[str(e)], describe={}))
+                out.append(dict(name=n, kind="profile", label=n, ready=False, problems=[str(e)], describe={}, quality=None))
+                continue
+            c = by_fp.get(fp)
+            if c:
+                used.add(fp)
+            out.append(entry(n, "profile", p, quality=c["quality"] if c else None))
         for s in SV.installed_solvers():
             try:
                 p = SV.resolve_profile(s["name"])
-                iss = SV.check(p, "replay", devices=True)
-                out.append(dict(name=s["name"], kind="solver", ready=not any(i.level == "error" for i in iss), problems=[i.text for i in iss if i.level == "error"], describe=p.describe()))
+                c = by_fp.get(p.fingerprint())
+                if c:
+                    used.add(c["fingerprint"])
+                out.append(entry(s["name"], "solver", p, quality=c["quality"] if c else None))
             except Exception as e:
-                out.append(dict(name=s["name"], kind="solver", ready=False, problems=[str(e)], describe={}))
-        return sorted(out, key=lambda p: (not p["ready"], p["kind"] != "solver", p["name"]))
+                out.append(dict(name=s["name"], kind="solver", label=s["name"], ready=False, problems=[str(e)], describe={}, quality=None))
+        for c in journal:
+            if c["fingerprint"] in used:
+                continue
+            try:
+                p = self._profile_from_journal(c["id"])
+            except Exception:
+                continue
+            e = entry(f"run:{c['id']}", "journal", p, label=f"{p.name} · {p.describe().get('fps')} к/с · {p.describe().get('cycle_model')} · прогон {str(c['created'] or '')[:10]}", quality=c["quality"])
+            try:
+                if p.fingerprint() != c["fingerprint"]:        # веса или пакет классификатора с тех пор заменены: качество в журнале относится к другой версии модели
+                    e["ready"] = False
+                    e["problems"] = ["модели или пакет классификатора изменились после этого прогона — показанное качество относится к прежней версии"] + e["problems"]
+            except Exception:
+                pass
+            out.append(e)
+        out = [p for p in out if p["ready"] or p["kind"] != "journal"]          # прежние конфигурации, которые больше не запустить (модели заменены), в выборе не показываем
+        return sorted(out, key=lambda p: (not p["ready"], p["kind"] != "profile", -(p["quality"] or {}).get("f1", -1) if p.get("quality") else 1, p["name"]))
 
     def _result_dir(self, vid: str, profile: str) -> Path:
         return self.out / "analysis" / hashlib.sha1(f"{vid}|{profile}".encode()).hexdigest()[:14]
@@ -293,6 +381,8 @@ class WebApp:
         from .. import profiles as PR
         from .. import solver as SV
 
+        if name.startswith("run:"):
+            return self._profile_from_journal(name[4:])
         insts = {s["name"] for s in SV.installed_solvers()}
         return SV.resolve_profile(name) if name in insts and name not in PR.list_profiles() else PR.load(name)
 
