@@ -9,8 +9,10 @@ import queue
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+
+import pandas as pd
 
 from .. import paths as P
 from ..realtime import sources as S
@@ -33,6 +35,8 @@ class Job:
         self.frame_hw: list | None = None
         self.fps: float = 10.0
         self.gt: list[dict] = []
+        self.cycles: list[dict] = []           # оценённые циклы с уверенностью классификатора и сигналами
+        self.cycle_th = self.event_th = 0.5
         self.horizon = 0.0                     # до какой секунды видео модель уже посчитала
         self._alert_map: dict[str, dict] = {}
         self.lock = threading.Lock()
@@ -52,11 +56,89 @@ class WebApp:
         self.out = Path(out) if out else P.OUTPUTS / "web"
         extra = [Path(x) for x in os.environ.get("SD_WEB_ROOTS", "").split(os.pathsep) if x]
         self.roots: dict[str, Path] = {"streams": Path(streams or P.STREAMS), "data": Path(data or P.DATA), **{f"extra{i}": p for i, p in enumerate(extra)}}
+        self.allow_fs = True                     # добавление папок и загрузка файлов: только для локального сервера (server.serve выставляет по адресу привязки)
+        self._roots_file = self.out / "roots.json"
+        for r in self._load_roots():
+            self.roots[r["key"]] = Path(r["path"])
         self.jobs: dict[str, Job] = {}
         self._q: queue.Queue = queue.Queue()
         self._worker: threading.Thread | None = None
         self._dur: dict[tuple, dict] = {}
         self.run_job = self._run_job            # подменяется в тестах
+
+    # ------------------------------------------------------------------ источники видео: свои папки и загрузка
+    def _load_roots(self) -> list[dict]:
+        try:
+            return [r for r in json.loads(self._roots_file.read_text(encoding="utf-8")) if Path(r["path"]).is_dir()]
+        except Exception:
+            return []
+
+    def _save_roots(self) -> None:
+        rows = [dict(key=k, path=str(p)) for k, p in self.roots.items() if k.startswith("x")]
+        self._roots_file.parent.mkdir(parents=True, exist_ok=True)
+        self._roots_file.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+
+    def add_root(self, path: str) -> dict:
+        """Подключает папку с видео на этом компьютере (рекурсивно). Возвращает {key, path, n}."""
+        if not self.allow_fs:
+            raise PermissionError("добавление папок отключено: сервер доступен из сети")
+        p = Path(str(path).strip().strip('"')).expanduser()
+        if not p.is_dir():
+            raise ValueError(f"папка не найдена: {p}")
+        p = p.resolve()
+        key = "x" + hashlib.sha1(str(p).encode()).hexdigest()[:8]
+        self.roots[key] = p
+        self._save_roots()
+        return dict(key=key, path=str(p), n=len(P.list_videos(p)))
+
+    def remove_root(self, key: str) -> bool:
+        if key.startswith("x") and key in self.roots:
+            del self.roots[key]
+            self._save_roots()
+            return True
+        return False
+
+    def upload_dir(self) -> Path:
+        d = self.roots["data"] / "uploads"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def save_upload(self, name: str, stream, length: int) -> dict:
+        """Принимает видео из браузера потоком (без загрузки в память). Формат любой из `VIDEO_EXT`; имя очищается; существующий файл не затирается."""
+        if not self.allow_fs:
+            raise PermissionError("загрузка отключена: сервер доступен из сети")
+        base = Path(str(name).replace("\\", "/")).name
+        ext = Path(base).suffix.lower()
+        if ext not in P.VIDEO_EXT:
+            raise ValueError(f"формат {ext or '?'} не поддерживается (допустимо: {', '.join(sorted(P.VIDEO_EXT))})")
+        limit = float(os.environ.get("SD_MAX_UPLOAD_GB", "8")) * 1e9
+        if length <= 0 or length > limit:
+            raise ValueError("пустой файл или больше допустимого размера")
+        stem = "".join(c if c.isalnum() or c in "-_." or ord(c) > 127 else "_" for c in Path(base).stem)[:80] or "video"
+        d = self.upload_dir()
+        dst = d / f"{stem}{ext}"
+        k = 1
+        while dst.exists():
+            dst = d / f"{stem}_{k}{ext}"
+            k += 1
+        tmp = dst.with_name(dst.name + ".part")
+        left = length
+        try:
+            with open(tmp, "wb") as f:
+                while left > 0:
+                    chunk = stream.read(min(1 << 20, left))
+                    if not chunk:
+                        raise ValueError("загрузка оборвалась")
+                    f.write(chunk)
+                    left -= len(chunk)
+            tmp.replace(dst)
+        finally:
+            tmp.unlink(missing_ok=True)
+        return dict(id=self.fid(dst), name=dst.name, folder=self.fid(d), **self.info(dst))
+
+    def media_for_alert(self, alert_id: int, fmt: str | None = None) -> dict:
+        p = self.artifact(alert_id, "clip")
+        return media.playable(p, fmt, float(self.info(p).get("duration") or 0.0))
 
     # ------------------------------------------------------------------ идентификаторы файлов (путь не уходит в браузер; выход за корни невозможен)
     def fid(self, path: Path) -> str:
@@ -108,7 +190,7 @@ class WebApp:
                 if v.parent in seen:
                     continue
                 seen.add(v.parent)
-                out.append(dict(id=self.fid(v.parent), name=str(v.parent.relative_to(r)) if v.parent != r else r.name, kind="data", root=k,
+                out.append(dict(id=self.fid(v.parent), name=str(v.parent.relative_to(r)) if v.parent != r else r.name, kind="data", root=k, removable=k.startswith("x"),
                                 n=sum(1 for f in v.parent.iterdir() if f.suffix.lower() in P.VIDEO_EXT)))
         return out
 
@@ -129,7 +211,37 @@ class WebApp:
         return media.playable(p, fmt, float(self.info(p).get("duration") or 0.0))
 
     # ------------------------------------------------------------------ камеры (карта)
-    def cameras(self) -> list[dict]:
+    def camera_metrics(self, hours: float = 0.0) -> dict[str, dict]:
+        """Показатели по камерам за период (0 — за всё время): тревог, в час, суммарное время курения, средняя уверенность, время реакции оператора, активность относительно самой активной камеры."""
+        since = (datetime.now() - timedelta(hours=hours)).isoformat(timespec="seconds") if hours else None
+        df = self.store.list_alerts(since=since, limit=20000)
+        out: dict[str, dict] = {}
+        if len(df):
+            df = df.assign(dur=(df.end_sec - df.start_sec).clip(lower=0))
+            span = hours or max(1.0, (pd.to_datetime(df.t_abs).max() - pd.to_datetime(df.t_abs).min()).total_seconds() / 3600)
+            for cid, g in df.groupby("camera_id"):
+                rv = g[g.reviewed_at.notna()]
+                react = (pd.to_datetime(rv.reviewed_at) - pd.to_datetime(rv.t_raised)).dt.total_seconds().median() if len(rv) else None
+                out[cid] = dict(alerts=int(len(g)), per_hour=round(len(g) / span, 2), smoke_sec=round(float(g.dur.sum()), 1), avg_conf=round(float(g.confidence.mean()), 3),
+                                reaction_sec=None if react is None or react != react else round(float(react), 1), pending=int((g.status == "new").sum()))
+            top = max(v["alerts"] for v in out.values())
+            for v in out.values():
+                v["activity_rel"] = round(v["alerts"] / top, 3)
+        return out
+
+    def cameras(self, hours: float = 0.0) -> list[dict]:
+        metrics = self.camera_metrics(hours)
+        rows = self._cameras()
+        for c in rows:
+            m = metrics.get(c["camera_id"]) or dict(alerts=0, per_hour=0.0, smoke_sec=0.0, avg_conf=None, reaction_sec=None, pending=0, activity_rel=0.0)
+            c["m"] = m
+            c["pending_period"] = m["pending"]
+            c["notice"] = (dict(title="Нет видео", reason="в папке камеры нет фрагментов") if not c["n_chunks"] and not c["alerts"] else
+                           dict(title="Камера ещё не обрабатывалась", reason="воркер не запускался: sd monitor") if c["n_chunks"] and not c["processed_sec"] and not c["alerts"] else
+                           dict(title="Низкая уверенность модели", reason=f"средняя {round(m['avg_conf'] * 100)}% при {m['alerts']} тревогах") if m["avg_conf"] is not None and m["alerts"] >= 3 and m["avg_conf"] < 0.55 else None)
+        return rows
+
+    def _cameras(self) -> list[dict]:
         ov = geo.load_overrides(self.roots["streams"])
         known = {r["camera_id"]: r for r in self.store.cameras().to_dict("records")}
         out, seen = [], set()
@@ -147,7 +259,7 @@ class WebApp:
         return out
 
     def camera(self, camera_id: str) -> dict:
-        for c in self.cameras():
+        for c in self._cameras():
             if c["camera_id"] == camera_id:
                 c = dict(c)
                 c["chunks"] = self.videos(c["folder"]) if c["folder"] else []
@@ -318,20 +430,27 @@ class WebApp:
             j.gt = [dict(start=float(r.start_sec), end=float(r.end_sec)) for r in sub.itertuples()]
             fps = float(prof.cfg()["video"]["process_fps"])
             j.fps = fps
+            j.cycle_th, j.event_th = float(prof.cfg()["events"]["cycle_th"]), float(prof.threshold)
 
             def on_alert(u) -> None:
-                a = dict(key=u.key, tid=int(u.tid), start=round(float(u.start), 2), end=round(float(u.end), 2), confidence=round(float(u.confidence), 3), explain=u.explain)
+                a = dict(key=u.key, tid=int(u.tid), start=round(float(u.start), 2), end=round(float(u.end), 2), confidence=round(float(u.confidence), 3), explain=u.explain,
+                         rule=u.rule, n_cycles=u.n_cycles, peak=round(float(u.peak), 2))
                 with j.lock:
                     old = j._alert_map.get(u.key)
                     a["t_open"] = old["t_open"] if old else round(float(u.t_now), 2)
                     a["delay"] = round(a["t_open"] - a["start"], 2)
-                    if u.kind != "close" or old:
+                    if u.kind == "close":        # у «close» нет причины и рамки: сохраняем то, что уже знаем об этой тревоге
+                        if old:
+                            old["end"] = max(old["end"], a["end"])
+                    else:
                         j._alert_map[u.key] = a
                     j.alerts = list(j._alert_map.values())
 
-            def on_frame(row, hw) -> None:
+            def on_frame(row, hw, eng_) -> None:
                 with j.lock:
                     j.frames.append(row)
+                    if len(eng_.cycle_log) != len(j.cycles):
+                        j.cycles = [dict(c, passed=bool(c["score"] >= j.cycle_th)) for c in eng_.cycle_log]
                     j.horizon = row[0]
                     if hw and not j.frame_hw:
                         j.frame_hw = list(hw)
@@ -356,7 +475,7 @@ class WebApp:
         with j.lock:
             new = j.frames[since:since + 2000]
             return dict(state=j.state, progress=round(j.progress, 3), error=j.error, frames=new, next=since + len(new), alerts=list(j.alerts), horizon=round(j.horizon, 2), frame_hw=j.frame_hw,
-                        fps=j.fps, gt=j.gt, stats=j.stats if j.state == "done" else None, metrics=j.metrics)
+                        fps=j.fps, gt=j.gt, cycles=j.cycles, thresholds=dict(cycle=j.cycle_th, event=j.event_th), stats=j.stats if j.state == "done" else None, metrics=j.metrics)
 
     def job(self, jid: str) -> Job:
         if jid not in self.jobs:

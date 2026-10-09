@@ -49,6 +49,7 @@ class ClassifierScorer:
             if self.need_photo and self.photo_bundle is None:
                 raise FeatureUnavailable("классификатору нужна фото-модель (photo_bundle), она не задана")
         self.missing_last: list[str] = []
+        self.last_details: dict = {}
         from ..fusion import FusionSpec
 
         self.fusion = FusionSpec.from_dict(fusion)          # те же поправки, что в offline: в replay работают сигналы предмета и фото-модели
@@ -83,14 +84,32 @@ class ClassifierScorer:
                 feats = feats.merge(ph, on=KEY, how="left", suffixes=("", "_ph"))
         return feats
 
+    def _details(self, feats: pd.DataFrame, base, contrib) -> dict:
+        """Что видел классификатор помимо позы: оценка до fusion, сигналы предмета/фото/VLM (если посчитаны) и вклад fusion в логитах."""
+        from ..fusion import SIGNALS, signal_column
+
+        cols = {n: signal_column(feats, n) for n in SIGNALS}
+        out = {}
+        for i, (t, s) in enumerate(zip(feats.tid, feats.start)):
+            d: dict = dict(base=round(float(base[i]), 3))
+            for n, c in cols.items():
+                if c is not None and np.isfinite(c.iloc[i]):
+                    d[{"vlm": "vlm", "photo": "photo", "object": "object"}[n]] = round(float(c.iloc[i]), 3)
+            if contrib is not None:
+                d["fusion"] = round(float(contrib.iloc[i].sum()), 3)
+            out[(int(t), round(float(s), 3))] = d
+        return out
+
     def score(self, cycles: pd.DataFrame, tr, ser: pd.DataFrame) -> dict:
         feats = self.features(cycles, tr, ser)
         if feats.empty:
             return {}
         self.missing_last = self.b.missing(feats)
-        sc = self.b.score(feats)
+        base = sc = self.b.score(feats)
+        contrib = None
         if self.fusion.active:
             from ..fusion import fuse
 
-            sc, _ = fuse(sc, feats, self.fusion)
+            sc, contrib = fuse(base, feats, self.fusion)
+        self.last_details = self._details(feats, base, contrib)
         return {(int(t), round(float(s), 3)): float(v) for t, s, v in zip(feats.tid, feats.start, sc)}

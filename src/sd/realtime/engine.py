@@ -184,6 +184,7 @@ class StreamEngine:
         self.threshold = float(cfg["events"]["confidence_threshold"])
         self.stats = dict(frames=0, evals=0, cycles=0)
         self.last_dets: list[tuple[int, list[float]]] = []
+        self.cycle_log: list[dict] = []        # каждый оценённый цикл: оценка классификатора и сигналы (предмет, фото, fusion) — для вывода «почему сработало»
 
     # ------------------------------------------------------------------ вход
     def step(self, img: np.ndarray | None, t: float) -> list[AlertUpdate]:
@@ -269,8 +270,11 @@ class StreamEngine:
                 cdf = pd.DataFrame(new_cycles, columns=["tid", "start", "mouth_in", "mouth_out", "end", "hold", "hand", "d_min", "peak_t"])
                 scores = self.scorer.score(cdf, tr, ser)
                 self.stats["cycles"] += len(cdf)
+                det = getattr(self.scorer, "last_details", {}) or {}
                 for r in cdf.itertuples():
                     sc = scores.get((int(r.tid), round(float(r.start), 3)), 0.0)
+                    self.cycle_log.append(dict(tid=int(r.tid), start=round(float(r.start), 2), end=round(float(r.end), 2), peak=round(float(r.peak_t), 2), hold=round(float(r.hold), 2),
+                                               score=round(float(sc), 3), **det.get((int(r.tid), round(float(r.start), 3)), {})))
                     self._scored.setdefault(int(r.tid), []).append(ScoredCycle(Cycle(int(r.tid), r.start, r.mouth_in, r.mouth_out, r.end, r.hold, int(r.hand), r.d_min), score=float(sc)))
                 for tid in {int(x) for x in cdf.tid}:
                     q = float(np.clip(visibility_fraction(ser[ser.tid == tid]) / 0.8, 0, 1))

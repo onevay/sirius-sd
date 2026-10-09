@@ -155,7 +155,7 @@ def replay_video(video: str | Path, profile: Profile, *, start: float = 0.0, end
         row = [round(t, 3), [[int(tid), *(round(float(v), 1) for v in b)] for tid, b in eng.last_dets]]
         trace_frames.append(row)
         if on_frame:
-            on_frame(row, eng.frame_hw)          # живой вывод: клиент рисует рамки по мере обработки
+            on_frame(row, eng.frame_hw, eng)     # живой вывод: клиент рисует рамки по мере обработки
         n_frames += 1
         if progress and n_frames % 10 == 0:
             progress(t, end if end is not None else t)
@@ -195,8 +195,10 @@ def replay_video(video: str | Path, profile: Profile, *, start: float = 0.0, end
                        alert_delay_max=float(np.max(delays)) if delays else None, n_gt=report.metrics["n_gt"])
     elif gt is not None:
         notes.append("в эталоне нет разметки этого клипа: метрики не считаются")
-    trace = dict(clip_id=cid, fps=fps, frame_hw=list(eng.frame_hw) if eng.frame_hw else None, frames=trace_frames,
-                 alerts=[dict(tid=int(r.tid), start=float(r.start), end=float(r.end), t_open=float(r.t_open), confidence=float(r.confidence), explain=str(r.explain), delay=float(r.delay))
+    cth = float(profile.cfg()["events"]["cycle_th"])
+    trace = dict(clip_id=cid, fps=fps, cycles=[dict(c, passed=bool(c["score"] >= cth)) for c in eng.cycle_log], thresholds=dict(cycle=cth, event=float(profile.threshold)), frame_hw=list(eng.frame_hw) if eng.frame_hw else None, frames=trace_frames,
+                 alerts=[dict(tid=int(r.tid), start=float(r.start), end=float(r.end), t_open=float(r.t_open), confidence=float(r.confidence), explain=str(r.explain), delay=float(r.delay),
+                          rule=str(r.rule), n_cycles=int(r.n_cycles), peak=float(r.peak))
                          for r in alerts.itertuples()],
                  gt=[dict(start=float(g.start_sec), end=float(g.end_sec)) for g in (gt_pos.itertuples() if gt_pos is not None else [])])
     out_dir = None
