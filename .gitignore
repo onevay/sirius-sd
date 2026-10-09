@@ -8,7 +8,14 @@ __pycache__/
 
 # исходные записи и результаты не коммитим (приватность: запись с объекта нельзя выкладывать в облако/репозитории)
 data/
-models/
+models/*
+!models/cycle/
+models/cycle/*
+!models/cycle/cycle_mvp/
+!models/cycle/cycle_mvp10/
+!models/photo/
+models/photo/*
+!models/photo/photo_v2/
 outputs/
 labels/*.csv
 !labels/README.md
@@ -25,5 +32,3 @@ docs/img/cycles_group_canopy.jpg
 docs/img/vlm_crops_mouth_vs_tube.jpg
 
 # копии видео для просмотра (создаются автоматически)
-src/sd/ui/static/media/*
-!src/sd/ui/static/media/README.txt

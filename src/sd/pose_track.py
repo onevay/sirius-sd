@@ -110,6 +110,14 @@ class _Dets:
         return _Dets(self.xyxy[idx], self.conf[idx])
 
 
+def _rtm_backend(refine: dict) -> tuple[str, str]:
+    """(backend, device) для RTMPose в rtmlib: onnxruntime (cpu | cuda, если есть CUDAExecutionProvider) или openvino (cpu | GPU)."""
+    if str(refine.get("backend", "onnxruntime")).lower() == "openvino":
+        dev = str(refine.get("device", "cpu"))
+        return "openvino", "GPU" if dev.lower() in ("gpu", "intel:gpu") else "cpu"
+    return "onnxruntime", _ort_device(refine)
+
+
 def _ort_device(refine: dict) -> str:
     """Устройство onnxruntime для RTMPose: cuda только если в сборке есть CUDAExecutionProvider, иначе cpu."""
     want = str(refine.get("device", "cpu")).lower()
@@ -120,12 +128,24 @@ def _ort_device(refine: dict) -> str:
     return "cpu"
 
 
+def _hand_near_face(kp: np.ndarray, box: np.ndarray, gate: float) -> bool:
+    """По сырым точкам YOLO: ближайшая к носу кисть ближе `gate` ширин плеч (нет плеч — четверть высоты рамки). Нет видимых носа/кистей — считаем «рядом» (не рискуем пропустить)."""
+    c = 0.2
+    if kp[0, 2] < c or max(kp[9, 2], kp[10, 2]) < c:
+        return True
+    s = float(np.hypot(*(kp[5, :2] - kp[6, :2]))) if min(kp[5, 2], kp[6, 2]) >= c else float(box[3] - box[1]) / 4.0
+    s = max(s, 1.0)
+    dist = min(float(np.hypot(*(kp[w, :2] - kp[0, :2]))) for w in (9, 10) if kp[w, 2] >= c)
+    return dist / s < gate
+
+
 class PoseTracker:
     def __init__(self, cfg: dict, proc_fps: float, frame_hw: tuple[int, int]):
         self.cfg, self.proc_fps, self.frame_hw = cfg, proc_fps, frame_hw
         pc = cfg["pose"]
         self.backend = pc["backend"]
         self.timing: dict[str, list[float]] = {"infer": [], "refine": [], "total": []}
+        self._ref_n, self._ref_until = 0, {}          # счётчик кадров и «уточнять до кадра N» по человеку (gate_s)
         self.refine_model = None
         self.rtm = None   # RTMPose (rtmlib) как уточнитель ключевых точек по рамкам YOLO
         self.last_raw = np.zeros((0, 5), np.float32)   # сырые детекции последнего кадра [x1,y1,x2,y2,conf] — до трекера
@@ -164,7 +184,8 @@ class PoseTracker:
             if method.startswith("rtmpose"):
                 from rtmlib import Body
 
-                self.rtm = Body(mode="lightweight" if method.endswith("s") else "balanced", backend="onnxruntime", device=_ort_device(pc["refine"])).pose_model
+                rb, rdev = _rtm_backend(pc["refine"])
+                self.rtm = Body(mode="lightweight" if method.endswith("s") else "balanced", backend=rb, device=rdev).pose_model
             else:
                 self.refine_model, self.refine_imgsz, self.refine_device = self._load_yolo_crop(pc["weights"], pc["refine"]["imgsz"])
 
@@ -209,7 +230,16 @@ class PoseTracker:
         """Уточнение ключевых точек. rtmpose-*: RTMPose (top-down) по рамкам YOLO для всех людей >= 20 px;
         yolo: второй проход YOLO-pose по кропу мелкого человека (рамка + pad -> pose-модель -> координаты обратно в кадр)."""
         if self.rtm is not None:
-            keep = [i for i, d in enumerate(dets) if d.box[3] - d.box[1] >= 20]
+            min_h = max(20.0, float(self.cfg["pose"]["refine"].get("min_height_px", 20)))
+            keep = [i for i, d in enumerate(dets) if d.box[3] - d.box[1] >= min_h]
+            gate = float(self.cfg["pose"]["refine"].get("gate_s", 0.0))
+            if gate > 0:
+                self._ref_n += 1
+                hold = int(np.ceil(float(self.cfg["pose"]["refine"].get("gate_hold_sec", 1.0)) * self.proc_fps))
+                for i in keep:
+                    if _hand_near_face(dets[i].kp, dets[i].box, gate):
+                        self._ref_until[dets[i].tid] = self._ref_n + hold
+                keep = [i for i in keep if self._ref_until.get(dets[i].tid, -1) >= self._ref_n]
             if not keep:
                 return dets
             k, s = self.rtm(img, bboxes=np.stack([dets[i].box for i in keep]))

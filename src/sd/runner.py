@@ -126,7 +126,7 @@ def run_clips(videos: Sequence[Path], profile: Profile, *, window: tuple[float, 
         run.seconds = round(time.perf_counter() - t0, 2)
         out.append(run)
         if progress:
-            progress(i + 1, len(videos), cid + (" (кэш)" if run.cached else "") + (" — ОШИБКА" if run.error else ""))
+            progress(i + 1, len(videos), cid + (" (кэш)" if run.cached else "") + (f" — ОШИБКА: {run.error}" if run.error else ""))
     return out
 
 
@@ -162,7 +162,7 @@ def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, classifier: s
                   only_labeled: bool = True, window: tuple[float, float | None] = (0.0, None), max_sec: float | None = None, roi_path: str | Path | None = None,
                   use_cache: bool = True, name: str | None = None, save: bool = True, gt_df: pd.DataFrame | None = None, n_boot: int = 300,
                   recognize_fn: Callable | None = None, probe_fn: Callable | None = None, progress: Progress = None, cache_root: Path | None = None,
-                  exp_root: Path | None = None, settings: EV.Settings | None = None) -> Outcome:
+                  exp_root: Path | None = None, settings: EV.Settings | None = None, clips: Sequence[str] | None = None) -> Outcome:
     """Полный цикл: клипы выбранных папок → события → отчёт → журнал. Исключения: `ValueError` — нечего оценивать (нет размеченных клипов / нет клипов)."""
     if mode not in ("events", "clips"):
         raise ValueError("mode ∈ {events, clips}")
@@ -177,6 +177,12 @@ def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, classifier: s
     if role == "hidden" and policy != "fixed":
         raise ValueError("на скрытом наборе порог фиксируется заранее (policy='fixed'): подбирать его по скрытым меткам запрещено")
     videos = LIB.videos_in(dirs)
+    if clips:          # точечная оценка: только клипы, id которых содержит одну из подстрок (быстрая проверка гипотезы без прогона всей папки)
+        want = [c.strip() for c in clips if c.strip()]
+        keep = [c for c in LIB.clip_ids(videos) if any(w == c or w in c for w in want)]
+        videos = [LIB.clip_ids(videos)[c] for c in keep]
+        if not videos:
+            raise ValueError(f"ни один клип не подходит под --clips {want}")
     if not videos:
         raise ValueError("в выбранных папках нет видео")
     ids = LIB.clip_ids(videos)

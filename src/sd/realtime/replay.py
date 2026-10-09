@@ -50,10 +50,10 @@ class ReplayResult:
 
 
 def _frames(video, start, end, fps) -> Iterator[tuple[np.ndarray, float]]:
-    from ..video_io import choose_stride, iter_frames, probe
+    from ..video_io import choose_stride, iter_frames, prefetch, probe
 
     info = probe(video)
-    for fr in iter_frames(video, start, end, choose_stride(info.fps, fps)):
+    for fr in prefetch(iter_frames(video, start, end, choose_stride(info.fps, fps))):
         yield fr.img, fr.t
 
 
@@ -169,6 +169,10 @@ def replay_video(video: str | Path, profile: Profile, *, start: float = 0.0, end
     stats = dict(frames=n_frames, stream_sec=round(stream_sec, 2), busy_sec=round(busy, 2), process_fps_target=fps, fps_proc=round(n_frames / busy, 2) if busy > 0 else None,
                  rt_factor=round(stream_sec / busy, 2) if busy > 0 else None, ms_p50=round(float(np.percentile(arr, 50)), 1), ms_p95=round(float(np.percentile(arr, 95)), 1),
                  ms_max=round(float(arr.max()), 1), cycles=int(eng.stats["cycles"]), alerts=int(sum(1 for s in state.values() if s["t_open"] is not None)), speed=speed)
+    if len(ms) > 1:             # первый кадр — загрузка и компиляция моделей: в работающем сервисе это один раз; «установившийся» коэффициент — без него
+        steady = (sum(ms) - ms[0]) / 1000.0
+        stats["warmup_sec"] = round(ms[0] / 1000.0, 1)
+        stats["rt_factor_steady"] = round((stream_sec - (t_last - t_first) / (len(ms) - 1)) / steady, 2) if steady > 0 else None
     stats["verdict"] = _verdict(stats)
     rows, evrows = [], []
     for i, s in enumerate(sorted((s for s in state.values() if s["t_open"] is not None), key=lambda s: s["start"]), 1):

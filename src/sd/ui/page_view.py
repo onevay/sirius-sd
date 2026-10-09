@@ -94,7 +94,7 @@ def _experiment() -> None:
 def _run_dir() -> None:
     res = P.list_results()
     if res.empty:
-        st.info("Отдельных прогонов нет: `sd recognize` или страница «Этапы» → «Распознавание окна».")
+        st.info("Отдельных прогонов нет: `sd recognize` или страница «Реальное время».")
         return
     default = st.session_state.get("player_dir")
     idx = int(res.index[res.dir == default][0]) if default in set(res.dir) else 0

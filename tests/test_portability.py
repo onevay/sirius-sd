@@ -19,7 +19,8 @@ def test_portable_roundtrip_and_foreign_windows_path(tmp_path, monkeypatch):
     assert s == "$DATA/курение/a.mp4" and P.from_portable(s) == f
     # путь из старого артефакта на Windows находится по хвосту внутри data/
     assert P.from_portable(r"C:\Users\me\proj\data\курение\a.mp4") == f
-    assert P.portable("/somewhere/else.mp4") == "/somewhere/else.mp4" and P.portable(None) is None and P.from_portable("") is None
+    assert P.portable("/somewhere/else.mp4").endswith("/somewhere/else.mp4") and "$DATA" not in P.portable("/somewhere/else.mp4")      # на Windows добавляется диск
+    assert P.portable(None) is None and P.from_portable("") is None
 
 
 def test_tracks_meta_video_survives_moving_data(tmp_path, monkeypatch):

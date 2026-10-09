@@ -190,7 +190,19 @@ class OVEmbedder:
         return np.concatenate(res).astype(np.float32)
 
 
+_EMB_CACHE: dict = {}
+
+
 def make_embedder(name: str, backend: str = "auto"):
+    """Эмбеддер картинок; экземпляры запоминаются по (имя, способ, SD_TORCH_DEVICE): компиляция OpenVINO-модели занимает секунды, а в потоке эмбеддер нужен на каждый цикл."""
+    key = (name, backend, os.environ.get("SD_TORCH_DEVICE", "cpu"))
+    e = _EMB_CACHE.get(key)
+    if e is None:
+        e = _EMB_CACHE[key] = _make_embedder(name, backend)
+    return e
+
+
+def _make_embedder(name: str, backend: str = "auto"):
     """backend: ov | torch | auto (ov, если IR уже экспортирован и есть openvino, иначе torch)."""
     if backend in ("ov", "auto") and ov_path(name).exists() and not (backend == "auto" and os.environ.get("SD_TORCH_DEVICE", "cpu").lower().startswith("cuda")):
         try:

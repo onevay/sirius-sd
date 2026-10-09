@@ -19,6 +19,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import experiments as XP
+from .paths import from_portable
 from . import preds_check as PC
 from . import library as LIB
 from . import profiles as PR
@@ -63,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
             from . import pipeline as P
 
             res = P.recognize(video, start, end, profile.cfg(), profile.options_obj(render=True))
-            f = Path(res.meta["out_dir"]) / "overlay.mp4"
+            f = from_portable(res.meta["out_dir"]) / "overlay.mp4"
             if f.exists():
                 shutil.copyfile(f, a.render / f"{Path(video).stem}.mp4")
             return res

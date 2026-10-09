@@ -69,3 +69,21 @@ def test_attach_replaces_stale_feature_columns(tmp_path):
     v = out[out.video == "v"].iloc[0]
     assert v.obj_a_max_conf == 0.7 and v.obj_any_max_conf == 0.7 and "obj_x_max_conf" not in out.columns
     assert out[out.video == "w"].obj_any_max_conf.isna().all() if "obj_any_max_conf" in out else True       # клип без кэша остаётся без признаков
+
+
+def test_evidence_cache_keeps_a_slot_per_configuration(tmp_path):
+    """Кэш признаков предмета не принадлежит «первому записавшему»: другая конфигурация (детекторы, параметры) получает соседний слот и не вытесняет чужой."""
+    import pandas as pd
+
+    from sd import enrich as EN
+    from sd.config import load_config
+
+    cfg_a = load_config(None)
+    cfg_b = load_config(None, ["evidence.conf=0.4"])
+    rows = lambda v: pd.DataFrame(dict(video=["c"], tid=[1], start=[1.0], obj_det_x_max_conf=[v]))      # noqa: E731
+    cyc = pd.DataFrame(dict(video=["c"], tid=[1], start=[1.0]))
+    EN.save_evidence(rows(0.1), cfg_a, ["det_x"], tmp_path)
+    EN.save_evidence(rows(0.9), cfg_b, ["det_x"], tmp_path)
+    assert EN.cached_evidence(cyc, cfg_a, ["det_x"], tmp_path).obj_det_x_max_conf.iloc[0] == 0.1
+    assert EN.cached_evidence(cyc, cfg_b, ["det_x"], tmp_path).obj_det_x_max_conf.iloc[0] == 0.9
+    assert any(p.name.startswith("alt_") for p in tmp_path.iterdir())

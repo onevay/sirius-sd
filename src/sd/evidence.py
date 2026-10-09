@@ -33,6 +33,32 @@ def hand_mouth_crop(img: np.ndarray, mouth: tuple[float, float], wrist: tuple[fl
     return img[y1:y1 + side, x1:x1 + side], (x1, y1, x1 + side, y1 + side)
 
 
+def ensure_detector_ov(weights: Path, imgsz: int) -> Path:
+    """OpenVINO IR детектора предмета рядом с весами (`<имя>_openvino_model`): экспорт один раз, статический вход imgsz×imgsz, fp32 (результат совпадает с torch до шума)."""
+    out = weights.with_name(weights.stem + "_openvino_model")
+    if (out / f"{weights.stem}.xml").exists() and (out / "imgsz.txt").exists() and (out / "imgsz.txt").read_text().strip() == str(imgsz):
+        return out
+    from ultralytics import YOLO
+
+    r = Path(str(YOLO(str(weights), task="detect").export(format="openvino", imgsz=imgsz, half=False, dynamic=False, batch=1, verbose=False)))
+    (r / "imgsz.txt").write_text(str(imgsz), encoding="utf-8")
+    return r
+
+
+_DET_CACHE: dict = {}
+
+
+def get_detector(detector_id: str, cfg: dict) -> "ObjectDetector":
+    """Один экземпляр детектора на (вес, среда, устройство, размер входа): в потоке признаки считаются по циклу, и загрузка/компиляция модели на каждый цикл стоила секунды."""
+    ev = cfg["evidence"]
+    key = (detector_id, str(ev.get("runtime", "torch")), str(ev.get("device", "")), int(ev["imgsz"]))
+    d = _DET_CACHE.get(key)
+    if d is None:
+        d = _DET_CACHE[key] = ObjectDetector(detector_id, cfg)
+    d.cfg = cfg                       # пороги (conf, imgsz кропа) берутся из текущей конфигурации
+    return d
+
+
 class ObjectDetector:
     """YOLO-детектор предмета из реестра весов (community-.pt перед загрузкой проходят сканирование)."""
 
@@ -42,12 +68,20 @@ class ObjectDetector:
         settings.update({"sync": False})
         self.id = detector_id
         self.cfg = cfg
-        self.model = YOLO(str(local_weights(detector_id)))
+        w = Path(local_weights(detector_id))
+        ev = cfg["evidence"]
+        self.runtime = str(ev.get("runtime", "torch"))
+        if self.runtime == "openvino":
+            self.model = YOLO(str(ensure_detector_ov(w, int(ev["imgsz"]))), task="detect")
+            self.device = str(ev.get("device", "intel:gpu")) if str(ev.get("device", "")).startswith("intel") else "intel:gpu"
+        else:
+            self.model = YOLO(str(w))
+            self.device = str(ev.get("device", "cpu"))
         self.names = self.model.names
 
     def detect(self, crop: np.ndarray) -> list[dict]:
         ev = self.cfg["evidence"]
-        r = self.model.predict(crop, imgsz=ev["imgsz"], conf=ev["conf"], verbose=False, device=str(ev.get("device", "cpu")))[0]
+        r = self.model.predict(crop, imgsz=ev["imgsz"], conf=ev["conf"], verbose=False, device=self.device)[0]
         out = []
         if r.boxes is not None and len(r.boxes):
             for b, c, k in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.conf.cpu().numpy(), r.boxes.cls.cpu().numpy()):
@@ -70,7 +104,7 @@ def run_evidence(video: str | Path, tr: Tracks, series: pd.DataFrame, cycles: pd
     """
     ev = cfg["evidence"]
     ids = detector_ids or ev["detectors"]
-    dets = [ObjectDetector(i, cfg) for i in ids]
+    dets = [get_detector(i, cfg) for i in ids]
     stride = int(tr.meta.get("stride", 1))
     wins = windows if windows is not None else cycle_windows(cycles, ev["crop_pad_frames_sec"])
     S = {tid: g.set_index("frame") for tid, g in series.groupby("tid")}

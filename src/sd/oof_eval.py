@@ -24,7 +24,7 @@ from . import evaluation as EV
 from . import gt as GT
 from . import stages
 from .calibrate import cfg_current_for_run
-from .paths import OUTPUTS
+from .paths import OUTPUTS, from_portable
 from .tracks import Tracks
 
 POS_LABELS = ("smoke",)
@@ -52,8 +52,9 @@ def scene_group(video: str) -> str:
     return video
 
 
-def collect(root: Path = OUTPUTS / "recognize", videos: Sequence[str] | None = None, window: str = "0-end") -> dict[str, ClipData]:
-    """Последний полный запуск `sd recognize` по каждому клипу: признаки циклов из его `analysis/`."""
+def collect(root: Path = OUTPUTS / "recognize", videos: Sequence[str] | None = None, window: str = "0-end", runs_like: str | None = None) -> dict[str, ClipData]:
+    """Последний полный запуск `sd recognize` по каждому клипу: признаки циклов из его `analysis/`. `runs_like` — только запуски, в имени каталога позы которых есть эта подстрока
+    (например `_10fps` или `5fps`): так классификатор обучается и оценивается на признаках ОДНОЙ конфигурации, а не на «последнем, что считалось»."""
     from . import feature_auc as FA
     from .pipeline import _with_end
 
@@ -62,6 +63,8 @@ def collect(root: Path = OUTPUTS / "recognize", videos: Sequence[str] | None = N
         if not vd.is_dir() or (videos is not None and vd.name not in videos):
             continue
         runs = sorted(d for d in vd.glob(f"{window}*") if (d / "result.json").exists())
+        if runs_like:
+            runs = [d for d in runs if runs_like in str(json.loads((d / "result.json").read_text(encoding="utf-8")).get("run_dir", ""))]
         if not runs:
             continue
         d = runs[-1]
@@ -71,7 +74,7 @@ def collect(root: Path = OUTPUTS / "recognize", videos: Sequence[str] | None = N
             tab = tab.assign(start=tab.start.round(3))
         else:   # клип без циклов: остаётся в оценке (событий нет), признаков нет
             tab = pd.DataFrame({"video": pd.Series(dtype=object), "tid": pd.Series(dtype="int64"), "start": pd.Series(dtype=float), "peak_t": pd.Series(dtype=float)})
-        out[vd.name] = ClipData(vd.name, Path(meta["run_dir"]), d, tab)
+        out[vd.name] = ClipData(vd.name, from_portable(meta["run_dir"]), d, tab)
     return out
 
 

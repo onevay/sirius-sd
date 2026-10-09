@@ -1375,7 +1375,8 @@ def gt_from_gestures_cmd(labeler: Annotated[str, typer.Option(help="имя ра�
 def oof_eval_cmd(sets: Annotated[str, typer.Option(help="наборы признаков через запятую (см. cycle_models.SETS)")] = "fast,obj_hold,obj_hold_zsd,obj_hold_vlm",
                  kinds: Annotated[str, typer.Option(help="члены ансамбля: lr, gb, nn")] = "lr,gb", repeats: int = 3, nested_seeds: int = 3,
                  by_scene: Annotated[bool, typer.Option("--by-scene", help="фолды по СЦЕНАМ (клипы одной камеры/человека вместе: noyabrsk, Jar, 2025_11_06_*, распитие), а не по клипам — строже")] = False,
-                 tag: Annotated[str, typer.Option(help="суффикс файла результата oof_study<tag>.csv")] = "") -> None:
+                 tag: Annotated[str, typer.Option(help="суффикс файла результата oof_study<tag>.csv")] = "",
+                 runs: Annotated[str, typer.Option(help="только запуски, в имени позы которых есть эта подстрока (напр. `_10fps`, `5fps`): признаки одной конфигурации")] = "") -> None:
     import numpy as np
     import pandas as pd
 
@@ -1386,7 +1387,7 @@ def oof_eval_cmd(sets: Annotated[str, typer.Option(help="наборы призн
     from .paths import list_videos, video_id
     from .video_io import probe
 
-    clips = O.collect()
+    clips = O.collect(runs_like=runs or None)
     if not clips:
         console.print("[red]нет готовых запусков `sd recognize` по полным видео[/]")
         raise typer.Exit(1)
@@ -1502,7 +1503,9 @@ def train_bundle_cmd(name: Annotated[str, typer.Argument(help="имя пакет
                      pool: Annotated[bool, typer.Option("--pool", help="обучать на ВСЕХ кандидатах пула (≈ 130 с метками, включая «нет жеста»): для широкого генератора кандидатов; VLM/видео-признаков в пуле нет")] = False,
                      enriched: Annotated[bool, typer.Option("--enriched", help="циклы ПОЛНЫХ запусков `sd recognize` + метки жестов + признаки `sd enrich` (предмет, фото/zero-shot, VLM): набор `obj_hold_zsd` и др.")] = False,
                      calibrate: Annotated[bool, typer.Option("--calibrate/--no-calibrate", help="изотоническая калибровка оценки; без неё оценка = среднее членов (пороги по `sd oof-eval` переносятся как есть)")] = True,
-                     kinds: Annotated[str, typer.Option(help="члены ансамбля через запятую: lr (логрегрессия), gb (LightGBM), nn (MLP)")] = "lr,gb,nn") -> None:
+                     kinds: Annotated[str, typer.Option(help="члены ансамбля через запятую: lr (логрегрессия), gb (LightGBM), nn (MLP)")] = "lr,gb,nn",
+                     runs: Annotated[str, typer.Option(help="с --enriched: только запуски, в имени позы которых есть эта подстрока (напр. `_10fps`)")] = "",
+                     detectors: Annotated[str, typer.Option(help="с --enriched: `obj_any_*` считать максимумом только по этим детекторам (через запятую); пусто — по всем")] = "") -> None:
     import pandas as pd
 
     from . import cycle_models as CM
@@ -1517,8 +1520,12 @@ def train_bundle_cmd(name: Annotated[str, typer.Argument(help="имя пакет
         from . import oof_eval as O
         from . import start_eval as SE
 
-        clips = O.collect()
+        clips = O.collect(runs_like=runs or None)
         tab = EN.attach(O.attach_labels(clips, pd.read_csv(SE.GT_CSV, encoding="utf-8-sig")), list(clips))
+        if detectors:
+            from .feature_auc import with_detectors
+
+            tab = with_detectors(tab, [d.strip() for d in detectors.split(",") if d.strip()])
         tab = tab[tab.y.notna()].reset_index(drop=True)
         labels = SE.GT_CSV
     elif pool:
@@ -1565,17 +1572,25 @@ def eval_cmd(dirs: Annotated[list[Path], typer.Option("--dir", "-d", help="па�
              roi: Annotated[Optional[Path], typer.Option(help="roi.json")] = None,
              solver: Annotated[Optional[Path], typer.Option(help="оценить установленный/упакованный решатель (*.sdsolver.zip или каталог) вместо профиля")] = None,
              classifier: Annotated[Optional[str], typer.Option(help="классификатор цикла (models/cycle/<имя>); подменяет выбранный в профиле. ОБЯЗАТЕЛЕН: без него оценка не запускается")] = None,
+             clips: Annotated[Optional[str], typer.Option(help="точечная оценка: только клипы, в id которых есть одна из подстрок (через запятую), напр. `курение__1,sm_2`")] = None,
+             sets: Annotated[Optional[list[str]], typer.Option("--set", "-s", help="точечная правка профиля ключ=значение (можно несколько раз), напр. -s video.process_fps=5 -s options.objects=[smoking_yolo11m_beehzod]")] = None,
              no_cache: Annotated[bool, typer.Option("--no-cache")] = False) -> None:
     from . import profiles as PR
     from . import runner as RN
     from . import solver as SV
 
     profs = [SV.resolve_profile(solver)] if solver else ([PR.load(p) for p in profile] if profile else [PR.default_profile()])
+    try:
+        profs = [PR.with_overrides(p, sets) for p in profs]
+    except (ValueError, KeyError) as e:
+        console.print(f"[red]{e}[/]")
+        raise typer.Exit(1)
     rows = []
     for p in profs:
         try:
             out = RN.evaluate_dirs([str(d) for d in dirs], p, classifier=classifier, mode=mode, role=role, policy="fixed" if role == "hidden" else policy, target_f1=target_f1,
-                                   use_cache=not no_cache, max_sec=max_sec, roi_path=str(roi) if roi else None, progress=lambda i, n, m: console.print(f"  [{i}/{n}] {m}"))
+                                   use_cache=not no_cache, max_sec=max_sec, roi_path=str(roi) if roi else None, clips=clips.split(",") if clips else None,
+                                   progress=lambda i, n, m: console.print(f"  [{i}/{n}] {m}"))
         except ValueError as e:
             console.print(f"[red]{p.name}: {e}[/]")
             raise typer.Exit(1)
@@ -1615,7 +1630,7 @@ def ui(port: int = 8501, headless: bool = True,
 
     app_py = Path(__file__).parent / "ui" / "app.py"
     cmd = [sys.executable, "-m", "streamlit", "run", str(app_py), "--server.port", str(port), "--server.address", host, "--server.headless", str(headless).lower(),
-           "--server.fileWatcherType", "none", "--server.enableStaticServing", "true", "--browser.gatherUsageStats", "false"]
+           "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false"]
     console.print("запуск:", " ".join(cmd))
     raise typer.Exit(subprocess.call(cmd, cwd=str(ROOT)))
 
@@ -1694,7 +1709,8 @@ def replay_cmd(video: VideoArg, profile: Annotated[Optional[str], typer.Option("
                classifier: Annotated[Optional[str], typer.Option(help="классификатор цикла (обязателен; подменяет выбранный в профиле)")] = None,
                start: Start = 0.0, end: End = None, speed: Annotated[float, typer.Option(help="0 — как можно быстрее, 1 — реальное время, N — в N раз быстрее")] = 0.0,
                gt: Annotated[bool, typer.Option("--gt/--no-gt", help="сверять с эталоном labels/events_gt.csv, если для клипа он есть")] = True,
-               render: Annotated[bool, typer.Option("--render/--no-render", help="видео с рамками, баннером тревоги и разметкой")] = False) -> None:
+               render: Annotated[bool, typer.Option("--render/--no-render", help="видео с рамками, баннером тревоги и разметкой")] = False,
+               sets: Annotated[Optional[list[str]], typer.Option("--set", "-s", help="точечная правка профиля ключ=значение (можно несколько раз), напр. -s video.process_fps=5")] = None) -> None:
     from . import gt as GT
     from . import profiles as PR
     from . import runner as RN
@@ -1702,6 +1718,11 @@ def replay_cmd(video: VideoArg, profile: Annotated[Optional[str], typer.Option("
     from .realtime import replay as RP
 
     prof = RN.with_classifier(SV.resolve_profile(solver) if solver else (PR.load(profile) if profile else PR.default_profile()), classifier)
+    try:
+        prof = PR.with_overrides(prof, sets)
+    except (ValueError, KeyError) as e:
+        console.print(f"[red]{e}[/]")
+        raise typer.Exit(1)
     errs = SV.errors(prof, "replay", devices=True)
     if errs:
         for e in errs:

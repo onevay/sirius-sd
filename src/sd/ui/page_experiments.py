@@ -1,4 +1,4 @@
-"""Страница «Эксперименты»: журнал и парное сравнение прогонов, серия вариантов профиля («что если»), метки циклов из эталона для обучения."""
+"""Страница «Журнал»: журнал и парное сравнение прогонов, серия вариантов профиля («что если»), метки циклов из эталона для обучения."""
 from __future__ import annotations
 
 import pandas as pd
@@ -25,7 +25,17 @@ def _journal() -> None:
     sel = st.dataframe(runs[cols], hide_index=True, on_select="rerun", selection_mode="multi-row", key="xp_hist",
                        column_config={"f1": st.column_config.ProgressColumn("F1", min_value=0, max_value=1, format="%.3f")})
     rows = sel["selection"]["rows"] if sel and sel.get("selection") else []
-    st.caption("Выберите две строки, чтобы сравнить прогоны на общих клипах (парный бутстрэп).")
+    st.caption("Одна строка — открыть в просмотре или удалить; две строки — сравнить прогоны на общих клипах (парный бутстрэп).")
+    if len(rows) == 1:
+        rid = runs.iloc[rows[0]]["id"]
+        c = st.columns(3)
+        if c[0].button("Открыть в просмотре"):
+            from sd.ui import nav
+
+            nav.go("view", view_src="Эксперимент", view_run=rid)
+        if c[1].button("Удалить прогон"):
+            XP.delete_run(rid)
+            st.rerun()
     if len(rows) == 2:
         a, b = runs.iloc[rows[0]]["id"], runs.iloc[rows[1]]["id"]
         try:
@@ -126,7 +136,7 @@ def _labels() -> None:
     st.write(f"Циклов {len(cycles)}, получено меток {len(labels)}: {LG.summarize(labels)}")
     st.dataframe(labels.round(2).head(200), hide_index=True)
     if st.button("Записать в labels/cycle_labels.csv", type="primary", disabled=labels.empty):
-        st.success(f"записано: {DS.save_labels_bulk(labels)}. Дальше: «Этапы» → «Обучение» или `sd train-bundle`. Ручные метки не затронуты; повторная запись заменяет прежние метки из эталона.")
+        st.success(f"записано: {DS.save_labels_bulk(labels)}. Дальше: страница «Классификатор» или `sd train-bundle`. Ручные метки не затронуты; повторная запись заменяет прежние метки из эталона.")
 
 
 def render() -> None:

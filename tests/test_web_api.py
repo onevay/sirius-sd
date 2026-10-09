@@ -189,7 +189,7 @@ def test_real_job_reports_missing_models_as_error(web):
     from sd import profiles as PR
 
     app.profiles = lambda: [dict(name="heur", kind="profile", ready=True, problems=[], describe={})]
-    PR.save(PR.heuristic_profile().__class__(name="heur", options=dict(allow_heuristic=True)), Path(app.out) / "pr")
+    PR.save(PR.heuristic_profile().__class__(name="heur", options=dict(allow_heuristic=True), config={"pose.weights": "no-such-pose-weights"}), Path(app.out) / "pr")
     vid = jget(base + "/api/camera/pavlovsk-01")[1]["chunks"][0]["id"]
     import sd.profiles as profmod
     orig = profmod.load
