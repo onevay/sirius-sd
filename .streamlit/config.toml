@@ -1,0 +1,8 @@
+# Настройки веб-интерфейса (читаются, если Streamlit запущен из корня проекта: `sd ui`, Docker, `streamlit run src/sd/ui/app.py`).
+[server]
+headless = true
+fileWatcherType = "none"            # после правок кода интерфейс перезапускают (как и раньше)
+maxMessageSize = 200
+
+[browser]
+gatherUsageStats = false

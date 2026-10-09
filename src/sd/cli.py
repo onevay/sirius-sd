@@ -29,8 +29,10 @@ app.add_typer(models_app, name="models")
 ollama_app = typer.Typer(no_args_is_help=True, help="Локальный Ollama для VLM: сервер только на 127.0.0.1 и без облака, статус, загрузка моделей.")
 app.add_typer(ollama_app, name="ollama")
 from .cli_photos import photos_app  # noqa: E402
+from .cli_solver import solver_app  # noqa: E402
 
 app.add_typer(photos_app, name="photos")
+app.add_typer(solver_app, name="solver")
 import shutil as _shutil
 
 # при перенаправлении вывода rich берёт ширину 80 и ломает таблицы — задаём разумный минимум
@@ -871,12 +873,14 @@ def clips_run(root: Annotated[Path, typer.Argument(help="папка вида <ro
     bundle = Bundle(cycle_bundle if cycle_bundle.is_absolute() else ROOT / cycle_bundle) if cycle_bundle else None
     df, cyc = C.run_clips(root, cfg, per_class, max_sec, start, only, pos, tag, force,
                           lambda i, k, name: console.print(f"[{i}/{k}] {name} ({time.perf_counter() - t0:.0f} с)"), bundle=bundle)
-    summ = C.summarize(df)
+    summ = C.summarize(df, cfg["cycles"]["th_in"])
     has_rules = "with_event_rules" in summ
+    has_reach = "reach_th_in" in summ
     _tbl("Сводка по классам (метка клипа = имя папки)" + ("; события — по классификатору, «по правилам» — по длительности паузы" if has_rules else ""),
-         ["класс", "метка", "клипов", "доля с циклом", "доля с событием"] + (["…по правилам"] if has_rules else []) + ["циклов/мин на человека", "рост человека, px", "ошибок"],
-         [[r.cls, r.label, r.clips, f"{r.with_cycle:.0%}", f"{r.with_event:.0%}"] + ([f"{r.with_event_rules:.0%}"] if has_rules else []) + [f"{r.cycles_per_person_min:.2f}", f"{r.h_med_px:.0f}", r.errors]
-          for r in summ.itertuples()])
+         ["класс", "метка", "клипов", "доля с циклом", "доля с событием"] + (["…по правилам"] if has_rules else []) + ["циклов/мин на человека", "рост человека, px"]
+         + (["рука достаёт до рта (d < th_in)", "достоверность запястий"] if has_reach else []) + ["ошибок"],
+         [[r.cls, r.label, r.clips, f"{r.with_cycle:.0%}", f"{r.with_event:.0%}"] + ([f"{r.with_event_rules:.0%}"] if has_rules else []) + [f"{r.cycles_per_person_min:.2f}", f"{r.h_med_px:.0f}"]
+          + ([f"{r.reach_th_in:.0%}", f"{r.wrist_conf_med:.2f}"] if has_reach else []) + [r.errors] for r in summ.itertuples()])
     out = OUTPUTS / "external" / (tag or root.name)
     if bundle is not None:
         ca = C.class_auc(df, cyc)
@@ -1309,6 +1313,142 @@ def smoke_cues_cmd(labels: Annotated[Path, typer.Option(help="CSV меток ц�
     console.print(f"таблицы: {out / 'smoke_cues.csv'}, {out / 'smoke_cues_compare.csv'}; признаки по циклам: {out / 'smoke_cycles.parquet'}")
 
 
+@app.command("enrich", help="Дорогие признаки цикла (предмет на кропах, VLM) по готовым запускам `sd recognize` → outputs/enrich/<клип>/; кэш по циклам, прерванный прогон продолжается. "
+                            "Нужны для классификатора `cheap`/`full` и для `sd oof-eval --enriched`.")
+def enrich_cmd(objects: Annotated[str, typer.Option(help="детекторы предмета через запятую; пусто — не считать")] = "smoking_yolo11m_beehzod,smoking_yolo26s_basant18",
+               vlm: Annotated[str, typer.Option(help="тег Ollama (например qwen3.5:2b-q4_K_M); пусто — без VLM; сервер: sd.cmd ollama up --igpu")] = "",
+               clips: Annotated[Optional[str], typer.Option(help="только эти клипы (video_id через запятую)")] = None,
+               photo_bundle: Annotated[Optional[Path], typer.Option(help="пакет фото-модели (models/photo/<имя>): признаки photo_* и zero-shot CLIP по кропам рта")] = None) -> None:
+    from . import enrich as EN
+    from . import oof_eval as O
+
+    cl = O.collect(videos=[c.strip() for c in clips.split(",")] if clips else None)
+    if not cl:
+        console.print("[red]нет готовых запусков `sd recognize` (outputs/recognize/<клип>/0-end*/analysis)[/]")
+        raise typer.Exit(1)
+    dets = [x.strip() for x in objects.split(",") if x.strip()]
+    console.print(f"клипов {len(cl)}; предмет: {', '.join(dets) or 'нет'}; VLM: {vlm or 'нет'}")
+    t0 = time.perf_counter()
+    res = EN.enrich_clips(cl, dets, vlm or None, photo_bundle=photo_bundle, progress=lambda tag, i, n, name: console.print(f"  [{i}/{n}] {tag} {name} ({time.perf_counter() - t0:.0f} с)") if tag == "клип" else None)
+    console.print(res.to_string(index=False))
+    console.print(f"каталог: {EN.ROOT}")
+
+
+@app.command("gt-from-gestures", help="Эталон событий (`labels/events_gt.csv`) из меток жестов `docs/review/gesture_gt.csv`: затяжки одного человека → эпизоды (POSITIVE), одиночные и неясные → IGNORE, "
+                                      "папка без курения → «весь клип без курения». Строки разметчика `assistant` по этим клипам заменяются, ваши — нет. Нужны готовые запуски (`sd recognize`/`sd eval`).")
+def gt_from_gestures_cmd(labeler: Annotated[str, typer.Option(help="имя разметчика в файле эталона")] = "assistant") -> None:
+    import pandas as pd
+
+    from . import gt as GT
+    from . import gt_pool as GP
+    from . import oof_eval as O
+    from . import start_eval as SE
+    from .paths import list_videos, video_id
+    from .tracks import Tracks
+    from .video_io import probe
+
+    clips = O.collect()
+    if not clips:
+        console.print("[red]нет готовых запусков `sd recognize` по полному видео[/]")
+        raise typer.Exit(1)
+    runs = [(n, c.run_dir) for n, c in clips.items()]
+    pool = SE.build_pool(SE.generator_cycles(runs))
+    pool = O.match_gestures(pool, pd.read_csv(SE.GT_CSV, encoding="utf-8-sig"))
+    vids = {video_id(v): v for v in list_videos()}
+    dur = {k: float(probe(vids[k]).duration) for k in clips}
+    cache: dict = {}
+
+    def box_at(v, tid, t):
+        if v not in cache:
+            cache[v] = Tracks.load(clips[v].run_dir / "pose")
+        return cache[v].box_at(int(tid), t)
+
+    r = GP.rebuild_gt(pool, dur, box_at, labeler=labeler)
+    df = GT.load()
+    console.print(r)
+    console.print(f"эталон: {GT.default_path()} · строк {len(df)}, клипов {df.clip_id.nunique()}, замечания проверки: {GT.validate(df) or 'нет'}")
+
+
+@app.command("oof-eval", help="Честная оценка классификатора цикла и событий: оценка каждого цикла моделью, не видевшей его видео (фолды по видео), AUC по классам жестов, F1 события по эталону "
+                              "(лучший на всех клипах — оптимистичен — и с вложенным подбором порогов). Данные: готовые запуски `sd recognize` по полным видео + метки жестов + `sd enrich`. "
+                              "Пишет outputs/analysis/oof_study.csv.")
+def oof_eval_cmd(sets: Annotated[str, typer.Option(help="наборы признаков через запятую (см. cycle_models.SETS)")] = "fast,obj_hold,obj_hold_zsd,obj_hold_vlm",
+                 kinds: Annotated[str, typer.Option(help="члены ансамбля: lr, gb, nn")] = "lr,gb", repeats: int = 3, nested_seeds: int = 3,
+                 by_scene: Annotated[bool, typer.Option("--by-scene", help="фолды по СЦЕНАМ (клипы одной камеры/человека вместе: noyabrsk, Jar, 2025_11_06_*, распитие), а не по клипам — строже")] = False,
+                 tag: Annotated[str, typer.Option(help="суффикс файла результата oof_study<tag>.csv")] = "",
+                 runs: Annotated[str, typer.Option(help="только запуски, в имени позы которых есть эта подстрока (напр. `_10fps`, `5fps`): признаки одной конфигурации")] = "") -> None:
+    import numpy as np
+    import pandas as pd
+
+    from . import enrich as EN
+    from . import gt as GT
+    from . import oof_eval as O
+    from . import start_eval as SE
+    from .paths import list_videos, video_id
+    from .video_io import probe
+
+    clips = O.collect(runs_like=runs or None)
+    if not clips:
+        console.print("[red]нет готовых запусков `sd recognize` по полным видео[/]")
+        raise typer.Exit(1)
+    tab = EN.attach(O.attach_labels(clips, pd.read_csv(SE.GT_CSV, encoding="utf-8-sig")), list(clips))
+    vids = {video_id(v): v for v in list_videos()}
+    dur = {k: float(probe(vids[k]).duration) for k in clips}
+    names = [x.strip() for x in sets.split(",") if x.strip()]
+    from . import cycle_models as CM
+
+    bad = [n for n in names if n not in CM.SETS]
+    if bad:
+        console.print(f"[red]неизвестные наборы {bad}; доступны: {', '.join(CM.SETS)}[/]")
+        raise typer.Exit(1)
+    console.print(f"клипов {len(clips)}, циклов {len(tab)}, размечено {int(tab.y.notna().sum())} (затяжек {int(np.nansum(tab.y))}); эталон событий: {len(GT.load())} строк")
+    res, _ = O.study(clips, tab, dur, names, tuple(k.strip() for k in kinds.split(",")), repeats, nested_seeds=nested_seeds, by_scene=by_scene, progress=lambda i, n, nm: console.print(f"  [{i}/{n}] {nm}"))
+    f = lambda v: "—" if v != v else f"{v:.2f}"   # noqa: E731
+    _tbl("Классификатор цикла (oof) и события по эталону; «вложенный» — честная оценка подбора порогов (мин–макс по разбиениям)", ["набор", "признаков", "AUC [95% по видео]", "F1 лучший*", "порог цикла / события", "P / R", "F1 вложенный"],
+         [[r["набор"], r["признаков"], f"{f(r['auc'])} [{f(r['auc_lo'])}–{f(r['auc_hi'])}]", f(r["f1_лучший"]), f"{r['порог_цикла']:.2f} / {r['порог_события']:.2f}", f"{f(r['P'])} / {f(r['R'])}",
+           f"{f(r['f1_вложенный_медиана'])} ({f(r['f1_вложенный_мин'])}–{f(r['f1_вложенный_макс'])})"] for _, r in res.iterrows()])
+    console.print("* пороги подобраны на тех же клипах — оптимистично.")
+    out = OUTPUTS / "analysis" / f"oof_study{tag or ('_scene' if by_scene else '')}.csv"
+    res.to_csv(out, index=False, encoding="utf-8-sig")
+    console.print(f"таблица: {out}")
+
+
+@app.command("ladder", help="«Лестница вычислений»: что даёт более тяжёлая поза (модель, размер входа, уточнение точек) на клипах с метками затяжек — recall затяжек циклами автомата, "
+                            "лишние циклы, мс на кадр, достоверность запястий. Оценка выигрыша от более мощного ПК; поза каждой конфигурации кэшируется. Пишет outputs/analysis/ladder.csv.")
+def ladder_cmd(configs: Annotated[str, typer.Option(help="через запятую: n960, n1280, n1600, n1920, s960, s1920, m1280, x1280, x1280_rtmm")] = "n960,m1280",
+               clips: Annotated[str, typer.Option(help="video_id[:начало-конец][@масштаб] через запятую; по умолчанию клипы с затяжками до 66 с (@масштаб — уменьшенная копия именно этого клипа)")] = "курение__1:0-66,курение__sm_6,курение__4,курение__sm_2",
+               scale: Annotated[float, typer.Option(help="во сколько раз уменьшить содержимое кадра при прежнем размере кадра (серые поля): имитация дальней камеры, 80–200 px скрытого набора")] = 1.0,
+               tag: Annotated[str, typer.Option(help="суффикс файла результата ladder<tag>.csv")] = "") -> None:
+    import pandas as pd
+
+    from . import ladder as LD
+    from . import start_eval as SE
+
+    names = [c.strip() for c in configs.split(",") if c.strip()]
+    bad = [n for n in names if n not in LD.CONFIGS]
+    if bad:
+        console.print(f"[red]неизвестные конфигурации {bad}; доступны: {', '.join(LD.CONFIGS)}[/]")
+        raise typer.Exit(1)
+    spec = []
+    for c in clips.split(","):
+        c, _, sc = c.strip().partition("@")                          # video_id[:начало-конец][@масштаб]
+        v, _, w = c.partition(":")
+        a, _, b = w.partition("-")
+        spec.append((v, float(a) if a else 0.0, float(b) if b else None, float(sc) if sc else None))
+    gest = pd.read_csv(SE.GT_CSV, encoding="utf-8-sig")
+    t0 = time.perf_counter()
+    df = LD.run(spec, gest, names, progress=lambda i, n, nm: console.print(f"  [{i}/{n}] {nm} ({time.perf_counter() - t0:.0f} с)"), scale=scale)
+    out = OUTPUTS / "analysis" / f"ladder{tag or ('_x%03d' % round(scale * 100) if scale != 1.0 else '')}.csv"
+    df.to_csv(out, index=False, encoding="utf-8-sig")
+    sm = LD.summarize(df)
+    f = lambda v: "—" if v != v else f"{v:.2f}"   # noqa: E731
+    _tbl("Поза: затяжки, найденные циклами автомата (метки — мои, не эталон)", ["конфигурация", "клипов", "затяжек", "найдено", "recall", "лишних циклов", "достоверность запястий", "мс/кадр", "ошибок"],
+         [[r.config, r.clips, r.smoke, r.found, f(r.recall), r.extra, f(r.wrist_conf), f"{r.ms_per_frame:.0f}", r.errors] for r in sm.itertuples()])
+    if (df.error != "").any():
+        console.print("[yellow]ошибки: " + "; ".join(sorted(set(f"{r.config} {r.clip}: {r.error}" for r in df[df.error != ''].itertuples())))[:600] + "[/]")
+    console.print(f"таблица: {out}")
+
+
 def _need_pool_tables() -> None:
     from . import pool_features as PFt
 
@@ -1360,7 +1500,12 @@ def train_bundle_cmd(name: Annotated[str, typer.Argument(help="имя пакет
                      feature_set: Annotated[str, typer.Option("--set", help="набор признаков: kin | kin+rhythm | kin+pose | kin+obj | cheap | cheap+photo | cheap+video | cheap+vlm | full")] = "cheap",
                      labels: Annotated[Path, typer.Option(help="CSV меток циклов")] = ROOT / "docs" / "review" / "assistant_visual_labels.csv",
                      vlm: Annotated[Optional[Path], typer.Option(help="parquet VLM (обязателен для наборов с vlm)")] = None, repeats: int = 5,
-                     pool: Annotated[bool, typer.Option("--pool", help="обучать на ВСЕХ кандидатах пула (≈ 130 с метками, включая «нет жеста»): для широкого генератора кандидатов; VLM/видео-признаков в пуле нет")] = False) -> None:
+                     pool: Annotated[bool, typer.Option("--pool", help="обучать на ВСЕХ кандидатах пула (≈ 130 с метками, включая «нет жеста»): для широкого генератора кандидатов; VLM/видео-признаков в пуле нет")] = False,
+                     enriched: Annotated[bool, typer.Option("--enriched", help="циклы ПОЛНЫХ запусков `sd recognize` + метки жестов + признаки `sd enrich` (предмет, фото/zero-shot, VLM): набор `obj_hold_zsd` и др.")] = False,
+                     calibrate: Annotated[bool, typer.Option("--calibrate/--no-calibrate", help="изотоническая калибровка оценки; без неё оценка = среднее членов (пороги по `sd oof-eval` переносятся как есть)")] = True,
+                     kinds: Annotated[str, typer.Option(help="члены ансамбля через запятую: lr (логрегрессия), gb (LightGBM), nn (MLP)")] = "lr,gb,nn",
+                     runs: Annotated[str, typer.Option(help="с --enriched: только запуски, в имени позы которых есть эта подстрока (напр. `_10fps`)")] = "",
+                     detectors: Annotated[str, typer.Option(help="с --enriched: `obj_any_*` считать максимумом только по этим детекторам (через запятую); пусто — по всем")] = "") -> None:
     import pandas as pd
 
     from . import cycle_models as CM
@@ -1370,7 +1515,20 @@ def train_bundle_cmd(name: Annotated[str, typer.Argument(help="имя пакет
         console.print(f"[red]набор «{feature_set}» не найден; доступны: {', '.join(CM.SETS)}[/]")
         raise typer.Exit(1)
     vlm = vlm or (DEFAULT_VLM_PARQUET if DEFAULT_VLM_PARQUET.exists() else None)
-    if pool:
+    if enriched:
+        from . import enrich as EN
+        from . import oof_eval as O
+        from . import start_eval as SE
+
+        clips = O.collect(runs_like=runs or None)
+        tab = EN.attach(O.attach_labels(clips, pd.read_csv(SE.GT_CSV, encoding="utf-8-sig")), list(clips))
+        if detectors:
+            from .feature_auc import with_detectors
+
+            tab = with_detectors(tab, [d.strip() for d in detectors.split(",") if d.strip()])
+        tab = tab[tab.y.notna()].reset_index(drop=True)
+        labels = SE.GT_CSV
+    elif pool:
         from . import pool_features as PFt
         from . import start_eval as SE
 
@@ -1382,8 +1540,8 @@ def train_bundle_cmd(name: Annotated[str, typer.Argument(help="имя пакет
         tab = tab[tab.start.notna()]
     tab = tab.reset_index(drop=True)
     meta = dict(labels=str(labels.relative_to(ROOT)) if labels.is_relative_to(ROOT) else str(labels), label_source="assistant_visual (суждения по кадрам, не эталон)" if ("assistant" in labels.name or "gesture_gt" in labels.name) else "ручные",
-                candidates="пул (несколько генераторов, включая «нет жеста»)" if pool else "рабочий автомат (th_in 0.65 / th_out 0.90)", vlm=vlm.name if (vlm and "vlm" in feature_set) else None, note="пакет собран для проверки механики и сравнения наборов; метрики — OOF по видео на малой выборке, не итоговое качество")
-    man = CM.train(tab, feature_set, ROOT / "models" / "cycle" / name, meta, repeats)
+                candidates="циклы рабочего автомата полных запусков + метки жестов пула" if enriched else ("пул (несколько генераторов, включая «нет жеста»)" if pool else "рабочий автомат (th_in 0.65 / th_out 0.90)"), vlm=vlm.name if (vlm and "vlm" in feature_set) else None, note="пакет собран для проверки механики и сравнения наборов; метрики — OOF по видео на малой выборке, не итоговое качество")
+    man = CM.train(tab, feature_set, ROOT / "models" / "cycle" / name, meta, repeats, calibrate=calibrate, kinds=tuple(k.strip() for k in kinds.split(",") if k.strip()))
     console.print(f"пакет: {ROOT / 'models' / 'cycle' / name}; циклов {man['n']} (курение {man['n_pos']}), видео {man['n_groups']}, признаков {len(man['features'])}")
     console.print(f"AUC out-of-fold: члены {man['cv']['auc_members']}, ансамбль {man['cv']['auc_ensemble']}, после калибровки {man['cv']['auc_ensemble_calibrated']}")
 
@@ -1412,15 +1570,30 @@ def eval_cmd(dirs: Annotated[list[Path], typer.Option("--dir", "-d", help="па�
              target_f1: Annotated[float, typer.Option(help="целевая Event F1")] = 0.80,
              max_sec: Annotated[Optional[float], typer.Option(help="только первые N секунд каждого клипа")] = None,
              roi: Annotated[Optional[Path], typer.Option(help="roi.json")] = None,
+             solver: Annotated[Optional[Path], typer.Option(help="оценить установленный/упакованный решатель (*.sdsolver.zip или каталог) вместо профиля")] = None,
+             classifier: Annotated[Optional[str], typer.Option(help="классификатор цикла (models/cycle/<имя>); подменяет выбранный в профиле. ОБЯЗАТЕЛЕН: без него оценка не запускается")] = None,
+             clips: Annotated[Optional[str], typer.Option(help="точечная оценка: только клипы, в id которых есть одна из подстрок (через запятую), напр. `курение__1,sm_2`")] = None,
+             sets: Annotated[Optional[list[str]], typer.Option("--set", "-s", help="точечная правка профиля ключ=значение (можно несколько раз), напр. -s video.process_fps=5 -s options.objects=[smoking_yolo11m_beehzod]")] = None,
              no_cache: Annotated[bool, typer.Option("--no-cache")] = False) -> None:
     from . import profiles as PR
     from . import runner as RN
+    from . import solver as SV
 
-    profs = [PR.load(p) for p in profile] if profile else [PR.default_profile()]
+    profs = [SV.resolve_profile(solver)] if solver else ([PR.load(p) for p in profile] if profile else [PR.default_profile()])
+    try:
+        profs = [PR.with_overrides(p, sets) for p in profs]
+    except (ValueError, KeyError) as e:
+        console.print(f"[red]{e}[/]")
+        raise typer.Exit(1)
     rows = []
     for p in profs:
-        out = RN.evaluate_dirs([str(d) for d in dirs], p, mode=mode, role=role, policy="fixed" if role == "hidden" else policy, target_f1=target_f1, use_cache=not no_cache,
-                               max_sec=max_sec, roi_path=str(roi) if roi else None, progress=lambda i, n, m: console.print(f"  [{i}/{n}] {m}"))
+        try:
+            out = RN.evaluate_dirs([str(d) for d in dirs], p, classifier=classifier, mode=mode, role=role, policy="fixed" if role == "hidden" else policy, target_f1=target_f1,
+                                   use_cache=not no_cache, max_sec=max_sec, roi_path=str(roi) if roi else None, clips=clips.split(",") if clips else None,
+                                   progress=lambda i, n, m: console.print(f"  [{i}/{n}] {m}"))
+        except ValueError as e:
+            console.print(f"[red]{p.name}: {e}[/]")
+            raise typer.Exit(1)
         m, b, ci = out.report.metrics, out.report.budget, out.report.ci.get("f1") or (None, None)
         rows.append([p.name, f"{m['f1']:.3f}", f"{ci[0]:.2f}–{ci[1]:.2f}" if ci[0] is not None else "—", f"{m['precision']:.3f}", f"{m['recall']:.3f}", f"{m['tp']}/{m['fp']}/{m['fn']}",
                      "—" if m["fp_per_hour"] is None else f"{m['fp_per_hour']:.1f}", f"{m['threshold']:.2f}", f"{int(b['errors'])}/{int(b['allowed'])}", "да" if b["reached"] else "нет"])
@@ -1460,6 +1633,121 @@ def ui(port: int = 8501, headless: bool = True,
            "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false"]
     console.print("запуск:", " ".join(cmd))
     raise typer.Exit(subprocess.call(cmd, cwd=str(ROOT)))
+
+
+@app.command("monitor", help="Мониторинг (real-time контур): камеры = папки <район>-<индекс>-<время начала> в --streams; тревоги пишутся в outputs/monitor/monitor.db, смотреть — `sd app`. "
+                            "--watch следит за папками и подхватывает новые фрагменты; --speed 1 — в реальном времени, 0 — как можно быстрее.")
+def monitor_cmd(streams: Annotated[Optional[Path], typer.Option(help="каталог с папками-камерами (по умолчанию SD_STREAMS или ./streams)")] = None,
+                profile: Annotated[Optional[str], typer.Option("--profile", "-p", help="профиль моделей (configs/experiments); по умолчанию default")] = None,
+                camera: Annotated[Optional[list[str]], typer.Option(help="только эти камеры (район-индекс), можно несколько раз")] = None,
+                watch: Annotated[bool, typer.Option("--watch/--once")] = False, speed: Annotated[float, typer.Option(help="скорость воспроизведения: 1 — как в жизни, 0 — без пауз")] = 0.0,
+                interval: Annotated[float, typer.Option(help="период опроса папок в режиме --watch, с")] = 5.0,
+                solver: Annotated[Optional[Path], typer.Option(help="решатель (*.sdsolver.zip или установленный) вместо профиля")] = None,
+                classifier: Annotated[Optional[str], typer.Option(help="классификатор цикла (models/cycle/<имя>); обязателен, подменяет выбранный в профиле")] = None) -> None:
+    from . import profiles as PR
+    from . import runner as RN
+    from . import solver as SV
+    from .paths import STREAMS
+    from .realtime.worker import run_monitor
+
+    prof = RN.with_classifier(SV.resolve_profile(solver) if solver else (PR.load(profile) if profile else PR.default_profile()), classifier)
+    errs = SV.errors(prof, "live", devices=True)
+    if errs:
+        for e in errs:
+            console.print(f"[red]{e.text}[/]")
+        raise typer.Exit(1)
+    root = streams or STREAMS
+    console.print(f"камеры: {root} · профиль {prof.name} · {prof.describe()}")
+    if not (prof.opts().get("cycle_bundle")):
+        console.print("[yellow]! классификатор цикла не задан (allow_heuristic): оценка — эвристика по длительности паузы, только для отладки[/]")
+    try:
+        tot = run_monitor(root, prof, cameras=camera, watch=watch, speed=speed, interval=interval, log=console.print)
+    except KeyboardInterrupt:
+        console.print("остановлено")
+        return
+    console.print(f"готово: фрагментов {tot['chunks']}, новых тревог {tot['alerts']}, обновлений {tot['updates']}")
+
+
+@app.command("monitor-demo", help="Демонстрационные тревоги для разработки интерфейса оператора без моделей (помечены «ДЕМО»). --clear удаляет их.")
+def monitor_demo_cmd(n: Annotated[int, typer.Option(help="сколько тревог создать")] = 14, clear: Annotated[bool, typer.Option("--clear")] = False) -> None:
+    from .realtime.demo import seed_demo
+    from .realtime.store import AlertStore
+
+    st = AlertStore()
+    if clear:
+        console.print(f"удалено демо-тревог: {st.delete_demo()}")
+        return
+    console.print(f"создано демо-тревог: {seed_demo(st, n)}; смотреть: sd app")
+
+
+@app.command("feedback-export", help="Решения оператора (подтверждено / ложная) → эталон событий labels/events_gt.csv: подтверждённые — POSITIVE, ложные — NEGATIVE (сложные негативы).")
+def feedback_export_cmd() -> None:
+    from .realtime.feedback import export_reviewed
+    from .realtime.store import AlertStore
+
+    console.print(export_reviewed(AlertStore()))
+
+
+@app.command("app", help="Веб-приложение оператора БЕЗ Streamlit: карта с камерами, мультипросмотр, тревоги и решения, просмотр видео с выводами модели. По умолчанию http://127.0.0.1:8502")
+def app_cmd(port: int = 8502, host: Annotated[str, typer.Option(help="адрес привязки; в контейнере 0.0.0.0")] = "127.0.0.1",
+            open_browser: Annotated[bool, typer.Option("--open/--no-open", help="открыть браузер")] = False) -> None:
+    from .web.server import serve
+
+    url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '') else host}:{port}"
+    console.print(f"веб-приложение: [bold]{url}[/]  (Ctrl+C — остановить)")
+    if open_browser:
+        import webbrowser
+
+        webbrowser.open(url)
+    serve(host=host, port=port)
+
+
+@app.command("replay", help="Имитация реального времени по видео: файл идёт через потоковый движок кадр за кадром, тревоги печатаются в момент срабатывания. "
+                            "С эталоном (--gt) — ещё TP/FP/FN, F1 и задержка тревоги; всегда — пропускная способность (справится ли устройство с потоком).")
+def replay_cmd(video: VideoArg, profile: Annotated[Optional[str], typer.Option("--profile", "-p", help="профиль (configs/experiments)")] = None,
+               solver: Annotated[Optional[Path], typer.Option(help="решатель (*.sdsolver.zip или установленный)")] = None,
+               classifier: Annotated[Optional[str], typer.Option(help="классификатор цикла (обязателен; подменяет выбранный в профиле)")] = None,
+               start: Start = 0.0, end: End = None, speed: Annotated[float, typer.Option(help="0 — как можно быстрее, 1 — реальное время, N — в N раз быстрее")] = 0.0,
+               gt: Annotated[bool, typer.Option("--gt/--no-gt", help="сверять с эталоном labels/events_gt.csv, если для клипа он есть")] = True,
+               render: Annotated[bool, typer.Option("--render/--no-render", help="видео с рамками, баннером тревоги и разметкой")] = False,
+               sets: Annotated[Optional[list[str]], typer.Option("--set", "-s", help="точечная правка профиля ключ=значение (можно несколько раз), напр. -s video.process_fps=5")] = None) -> None:
+    from . import gt as GT
+    from . import profiles as PR
+    from . import runner as RN
+    from . import solver as SV
+    from .realtime import replay as RP
+
+    prof = RN.with_classifier(SV.resolve_profile(solver) if solver else (PR.load(profile) if profile else PR.default_profile()), classifier)
+    try:
+        prof = PR.with_overrides(prof, sets)
+    except (ValueError, KeyError) as e:
+        console.print(f"[red]{e}[/]")
+        raise typer.Exit(1)
+    errs = SV.errors(prof, "replay", devices=True)
+    if errs:
+        for e in errs:
+            console.print(f"[red]{e.text}[/]")
+        raise typer.Exit(1)
+    vid = resolve_video(video)
+    console.print(f"{vid.name}: профиль {prof.name} · {prof.describe()['cycle_model']} · темп x{speed:g}" if speed else f"{vid.name}: профиль {prof.name} · {prof.describe()['cycle_model']} · без пауз")
+
+    def on_alert(u) -> None:
+        if u.kind == "open":
+            console.print(f"  [red]ТРЕВОГА[/] поток {u.t_now:6.1f} с · начало события {u.start:6.1f} с · ID {u.tid} · {u.explain} · {u.confidence:.0%} (задержка {u.t_now - u.start:.1f} с)")
+        elif u.kind == "update":
+            console.print(f"  обновление: событие до {u.end:.1f} с · {u.explain} · {u.confidence:.0%}")
+
+    res = RP.replay_video(vid, prof, start=start, end=end, speed=speed, gt=GT.load() if gt else None, render=render, on_alert=on_alert)
+    s = res.stats
+    console.print(f"кадров {s['frames']} · {s['stream_sec']} с видео за {s['busy_sec']} с вычислений · {s['fps_proc']} к/с (нужно {s['process_fps_target']:g}) · мс/кадр p50 {s['ms_p50']}, p95 {s['ms_p95']}")
+    console.print(f"[bold]{s['verdict']}[/]")
+    console.print(f"циклов {s['cycles']}, тревог {s['alerts']}")
+    if res.metrics:
+        m = res.metrics
+        console.print(f"эталон: TP {m['tp']} FP {m['fp']} FN {m['fn']} · P {m['precision']:.2f} R {m['recall']:.2f} F1 {m['f1']:.2f} · задержка тревоги: медиана {m['alert_delay_median']}, максимум {m['alert_delay_max']} с")
+    for n in res.notes:
+        console.print(f"[yellow]! {n}[/]")
+    console.print(f"результаты: {res.out_dir}" + (f" · видео {res.overlay}" if res.overlay else ""))
 
 
 @app.command(help="Юнит-тесты (pytest).")

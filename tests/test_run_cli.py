@@ -24,10 +24,12 @@ def test_sd_run_writes_preds_above_threshold_and_manifest(tmp_path, monkeypatch)
     monkeypatch.setattr(R, "_default_probe", lambda v: SimpleNamespace(duration=30.0))
     monkeypatch.setattr(R, "CACHE_DIR", tmp_path / "cache")
     out = tmp_path / "o" / "preds.csv"
-    assert RUN.main(["--input", str(d), "--out", str(out), "--threshold", "0.5"]) == 0
+    assert RUN.main(["--input", str(d), "--out", str(out), "--threshold", "0.5"]) == 2          # без классификатора цикла запуск отклоняется
+    pf = PR.save(PR.heuristic_profile(), tmp_path / "prof")
+    assert RUN.main(["--input", str(d), "--out", str(out), "--threshold", "0.5", "--profile", str(pf)]) == 0
     df = pd.read_csv(out)
     assert df.clip_id.tolist() == ["a"] and df.camera_id.tolist() == ["cam1"] and list(df.columns) == R.EVENT_COLUMNS
     assert len(pd.read_csv(out.with_suffix(".all.csv"))) == 2
     man = json.loads(out.with_suffix(".manifest.json").read_text(encoding="utf-8"))
-    assert man["confidence_threshold"] == 0.5 and man["events_written"] == 1 and man["fingerprint"] == PR.default_profile().fingerprint() and not man["errors"]
+    assert man["confidence_threshold"] == 0.5 and man["events_written"] == 1 and man["fingerprint"] == PR.heuristic_profile().fingerprint() and not man["errors"]
     assert RUN.main(["--input", str(tmp_path / "пусто"), "--out", str(out)]) == 2

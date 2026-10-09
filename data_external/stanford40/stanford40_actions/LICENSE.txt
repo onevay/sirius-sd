@@ -1,2 +1,0 @@
-Карточка зеркала на Hugging Face (загрузил zrchen03): MIT. Оригинал — Stanford 40 Actions (Yao, Jiang, Khosla, Lin, Guibas, Fei-Fei; ICCV 2011), распространяется для исследовательских целей: для коммерческого использования условия оригинала нужно проверить отдельно.
-Источник: https://huggingface.co/datasets/zrchen03/Stanford40_Dataset

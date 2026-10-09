@@ -10,7 +10,8 @@ from sd import gt as GT
 from sd import library as LIB
 from sd import viewdata as VD
 from sd.paths import OUTPUTS
-from sd.ui.labeler import labeler, video_data_uri
+from sd.ui.labeler import labeler
+from sd.ui.media import media_src
 
 
 @st.cache_data(show_spinner=False)
@@ -86,7 +87,7 @@ def render() -> None:
     info = _probe(str(video), video.stat().st_mtime)
     with st.spinner("готовим копию видео для просмотра…"):
         prox = _proxy(video)
-    uri, warn = video_data_uri(prox)
+    uri, warn = media_src(prox)
     if warn:
         st.warning(warn)
     runs = VD.find_pose_runs(cid)
@@ -97,7 +98,7 @@ def render() -> None:
         tracks = tp["tracks"]
         src = (tp["src_w"] or info["w"], tp["src_h"] or info["h"])
     else:
-        st.caption("Треков для клипа нет — рамку рисуйте мышью. Автоподсказки: страница «Этапы» → «Поза и трекинг».")
+        st.caption("Треков для клипа нет — рамку рисуйте мышью.")
     act = labeler(key=f"lab_{cid}", video=uri, video_key=f"{cid}:{prox}", duration=info["dur"], fps=12.0, src_size=src, intervals=VD.gt_payload(gt, cid), tracks=tracks, clip_id=cid)
     nonce_key = f"lab_nonce_{cid}"
     if act and act.get("nonce") != st.session_state.get(nonce_key):

@@ -28,7 +28,7 @@ from . import gt as GT
 from . import library as LIB
 from . import roi as ROI
 from .config import stable_hash
-from .paths import OUTPUTS, video_id, weak_label
+from .paths import OUTPUTS, from_portable, portable, video_id, weak_label
 from .profiles import Profile
 
 CACHE_DIR = OUTPUTS / "eval_cache"
@@ -84,7 +84,7 @@ def window_for(duration: float, window: tuple[float, float | None] = (0.0, None)
 
 def _key(profile: Profile, video: Path, win: tuple[float, float | None]) -> str:
     st = video.stat()
-    return stable_hash(dict(fp=profile.fingerprint(), v=str(video.resolve()), size=st.st_size, mt=st.st_mtime_ns, w=list(win)), 12)
+    return stable_hash(dict(fp=profile.fingerprint(), v=portable(video), size=st.st_size, mt=st.st_mtime_ns, w=list(win)), 12)
 
 
 def run_clips(videos: Sequence[Path], profile: Profile, *, window: tuple[float, float | None] = (0.0, None), max_sec: float | None = None,
@@ -113,7 +113,7 @@ def run_clips(videos: Sequence[Path], profile: Profile, *, window: tuple[float, 
             else:
                 res = recognize_fn(v, win[0], win[1], profile)
                 ev = res.events.copy()
-                meta = dict(run_dir=res.meta.get("run_dir"), out_dir=res.meta.get("out_dir"), cycles=res.meta["counts"]["cycles"], people=res.meta["counts"]["people"],
+                meta = dict(run_dir=portable(res.meta.get("run_dir")), out_dir=portable(res.meta.get("out_dir")), cycles=res.meta["counts"]["cycles"], people=res.meta["counts"]["people"],
                             warnings=res.meta.get("warnings", []))
                 d.mkdir(parents=True, exist_ok=True)
                 ev.to_csv(f, index=False, encoding="utf-8-sig")
@@ -126,7 +126,7 @@ def run_clips(videos: Sequence[Path], profile: Profile, *, window: tuple[float, 
         run.seconds = round(time.perf_counter() - t0, 2)
         out.append(run)
         if progress:
-            progress(i + 1, len(videos), cid + (" (кэш)" if run.cached else "") + (" — ОШИБКА" if run.error else ""))
+            progress(i + 1, len(videos), cid + (" (кэш)" if run.cached else "") + (f" — ОШИБКА: {run.error}" if run.error else ""))
     return out
 
 
@@ -151,19 +151,38 @@ def _weak_frame(runs: Iterable[ClipRun]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["clip_id", "y", "duration", "events"])
 
 
-def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, mode: str = "events", role: str = "validation", policy: str = "plateau", target_f1: float = 0.80,
+def with_classifier(profile: Profile, classifier: str | Path | None) -> Profile:
+    """Копия профиля с выбранным классификатором цикла (выбор классификатора — часть проверки, а не скрытая деталь профиля)."""
+    if not classifier:
+        return profile
+    return Profile(profile.name, profile.description, profile.base, dict(profile.config), {**profile.options, "cycle_bundle": str(classifier)})
+
+
+def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, classifier: str | Path | None = None, mode: str = "events", role: str = "validation", policy: str = "plateau", target_f1: float = 0.80,
                   only_labeled: bool = True, window: tuple[float, float | None] = (0.0, None), max_sec: float | None = None, roi_path: str | Path | None = None,
                   use_cache: bool = True, name: str | None = None, save: bool = True, gt_df: pd.DataFrame | None = None, n_boot: int = 300,
                   recognize_fn: Callable | None = None, probe_fn: Callable | None = None, progress: Progress = None, cache_root: Path | None = None,
-                  exp_root: Path | None = None, settings: EV.Settings | None = None) -> Outcome:
+                  exp_root: Path | None = None, settings: EV.Settings | None = None, clips: Sequence[str] | None = None) -> Outcome:
     """Полный цикл: клипы выбранных папок → события → отчёт → журнал. Исключения: `ValueError` — нечего оценивать (нет размеченных клипов / нет клипов)."""
     if mode not in ("events", "clips"):
         raise ValueError("mode ∈ {events, clips}")
+    from . import solver as SV
+
+    profile = with_classifier(profile, classifier)
+    errs = SV.errors(profile, devices=recognize_fn is None)           # до долгого прогона: нет классификатора, нет нужных экстракторов, неверный fusion
+    if errs:
+        raise ValueError("профиль не готов к оценке:\n  - " + "\n  - ".join(e.text for e in errs))
     if role not in ("validation", "hidden"):
         raise ValueError("role ∈ {validation, hidden}")
     if role == "hidden" and policy != "fixed":
         raise ValueError("на скрытом наборе порог фиксируется заранее (policy='fixed'): подбирать его по скрытым меткам запрещено")
     videos = LIB.videos_in(dirs)
+    if clips:          # точечная оценка: только клипы, id которых содержит одну из подстрок (быстрая проверка гипотезы без прогона всей папки)
+        want = [c.strip() for c in clips if c.strip()]
+        keep = [c for c in LIB.clip_ids(videos) if any(w == c or w in c for w in want)]
+        videos = [LIB.clip_ids(videos)[c] for c in keep]
+        if not videos:
+            raise ValueError(f"ни один клип не подходит под --clips {want}")
     if not videos:
         raise ValueError("в выбранных папках нет видео")
     ids = LIB.clip_ids(videos)
@@ -191,9 +210,13 @@ def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, mode: str = "
     st = settings or EV.Settings(threshold=prof.threshold, target_f1=target_f1)
     runs = run_clips(videos, prof, window=window, max_sec=max_sec, zones=zones, use_cache=use_cache, recognize_fn=recognize_fn, probe_fn=probe_fn, progress=progress, cache_root=cache_root)
     failed = [r for r in runs if r.error]
+    if save and failed and len(failed) == len(runs):      # ни один клип не обработан: «F1 = 0» в журнале выглядел бы как плохая модель, а это сбой запуска (нет весов, CUDA, битый файл)
+        raise RuntimeError("ни один клип не обработан, прогон не сохранён. Первая ошибка: " + failed[0].error + (f" (всего {len(failed)} клипов с ошибкой)" if len(failed) > 1 else ""))
     if failed:
         notes.append(f"клипов с ошибкой обработки: {len(failed)} (посчитаны как «событий нет»): " + "; ".join(f"{r.clip_id}: {r.error}" for r in failed[:3]))
-    durations = {r.clip_id: r.duration for r in runs if r.duration > 0}
+    gt_end = gt_all.groupby("clip_id").end_sec.max().to_dict() if len(gt_all) else {}
+    # клип, у которого не удалось даже прочитать длительность, остаётся в оценке (событий нет → пропуски эталона = FN); иначе сбой молча улучшал бы метрику
+    durations = {r.clip_id: (r.duration if r.duration > 0 else max(float(gt_end.get(r.clip_id, 0.0)), 1.0)) for r in runs}
     events_all = pd.concat([r.events.assign(clip_id=r.clip_id) for r in runs if len(r.events)], ignore_index=True) if any(len(r.events) for r in runs) else pd.DataFrame(columns=EVENT_COLUMNS)
     policy_eff = "fixed" if role == "hidden" else policy
     if mode == "events":
@@ -214,7 +237,7 @@ def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, mode: str = "
         rep.notes.append("скрытый набор: порог взят из профиля и не подбирался; кривая — только справочно")
     rep.notes = notes + rep.notes
     meta = dict(name=name or prof.name, profile=prof.to_dict(), describe=prof.describe(), fingerprint=prof.fingerprint(), mode=mode, role=role, policy=policy_eff,
-                dirs=[str(d) for d in dirs], clips=[dict(clip_id=r.clip_id, path=str(r.video), duration=r.duration, window=list(r.window), cached=r.cached, seconds=r.seconds,
+                dirs=[str(d) for d in dirs], clips=[dict(clip_id=r.clip_id, path=portable(r.video), duration=r.duration, window=list(r.window), cached=r.cached, seconds=r.seconds,
                                                          run_dir=r.run_dir, out_dir=r.out_dir, error=r.error, cycles=r.cycles, people=r.people) for r in runs],
                 skipped_unlabeled=skipped, gt_fingerprint=GT.fingerprint(gt_all, set(durations)) if mode == "events" else None, gt_rows=int(len(gt_used)),
                 roi=str(roi_path) if roi_path else None, max_sec=max_sec, target_f1=target_f1, total_seconds=round(sum(r.seconds for r in runs), 1))

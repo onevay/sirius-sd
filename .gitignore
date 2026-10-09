@@ -8,7 +8,27 @@ __pycache__/
 
 # исходные записи и результаты не коммитим (приватность: запись с объекта нельзя выкладывать в облако/репозитории)
 data/
-models/
+models/*
+!models/cycle/
+models/cycle/*
+!models/cycle/cycle_mvp/
+!models/cycle/cycle_mvp10/
+!models/photo/
+models/photo/*
+!models/photo/photo_v2/
 outputs/
 labels/*.csv
 !labels/README.md
+.env
+.requirements.install.txt
+
+# открытые наборы данных (лицензии разные: HMDB51 и Stanford40 — исследовательские, не распространять) — качаются командами `sd photos fetch`, `sd fetch-videos`
+data_external/
+
+# кадры из записей площадки в иллюстрациях документов: перед публикацией репозитория убрать или заменить (см. README, «Перед публикацией репозитория»)
+docs/img/pose_sm6_t12.jpg
+docs/img/cycles_night_ir_1.jpg
+docs/img/cycles_group_canopy.jpg
+docs/img/vlm_crops_mouth_vs_tube.jpg
+
+# копии видео для просмотра (создаются автоматически)

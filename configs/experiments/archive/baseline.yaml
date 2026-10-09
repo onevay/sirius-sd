@@ -1,0 +1,7 @@
+name: baseline
+description: поза YOLO26n@960 (OpenVINO iGPU) + RTMPose-s, BoT-SORT, классификатор цикла cycle_fast, без предмета и VLM
+config: {}
+options:
+  cycle_bundle: models/cycle/cycle_fast
+  objects: []
+  vlm_mode: "off"

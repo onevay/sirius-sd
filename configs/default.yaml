@@ -31,6 +31,11 @@ pose:
     imgsz: 320               # method=yolo: размер кропа
     pad: 0.25                # method=yolo: запас вокруг рамки
     kp_conf_min: 0.30        # method=rtmpose-*: порог видимости (у RTMPose шкала уверенности иная, чем у YOLO)
+    device: cpu              # method=rtmpose-*: cpu | cuda (cuda нужен onnxruntime-gpu; нет — тихо остаётся cpu); для backend=openvino: cpu | GPU
+    backend: onnxruntime     # method=rtmpose-*: onnxruntime | openvino (OpenVINO на CPU считает RTMPose-s в ≈ 4 раза быстрее при тех же весах — замер 3 человека: 60 против 233 мс)
+    gate_s: 0.0              # method=rtmpose-*: > 0 — уточнять только человека, у которого по сырым точкам YOLO кисть ближе к носу этого числа ширин плеч (рука у лица), плюс gate_hold_sec после; 0 — уточнять всех
+    gate_hold_sec: 1.0
+    min_height_px: 20        # method=rtmpose-*: уточнять только людей не ниже этой высоты (люди ниже min_person_height_px всё равно IGNORE: 60 экономит время в толпе)
 
 tracking:
   tracker: botsort           # botsort | bytetrack
@@ -84,6 +89,8 @@ evidence:                    # прямой признак: сигарета/в�
   detectors: [smoking_yolo26s_basant18, smoking_yolo11m_beehzod]
   imgsz: 320
   conf: 0.15
+  runtime: torch             # torch | openvino (экспорт IR при первом запуске в models/<id>_openvino_model; на встроенной графике в 3–4 раза быстрее CPU)
+  device: cpu                # torch: cpu | 0 / cuda:0;  openvino: intel:gpu | intel:cpu
   crop_scale: 1.2            # сторона кропа в ширинах плеч
   crop_min_px: 48
   crop_pad_frames_sec: 0.5   # кадры AT_MOUTH ± 0.5 с

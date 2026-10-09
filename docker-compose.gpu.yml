@@ -1,0 +1,37 @@
+# Надстройка для ноутбука с NVIDIA (4 ГБ VRAM и больше). Нужны: драйвер NVIDIA и NVIDIA Container Toolkit (Docker Desktop на Windows — WSL2 с поддержкой GPU).
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build ui
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm cli doctor      # в отчёте должно быть «torch cuda: True»
+# Дальше в вебе: профиль mvp с правками -s pose.runtime=torch -s pose.device=cuda:0 -s pose.weights=yolo26s-pose -s pose.imgsz=1600 -s pose.refine.device=cuda -s evidence.runtime=torch -s evidence.device=0 (не измерено); «Задачи» → «Лестница вычислений» с конфигурациями gpu_s1600,gpu_m1600 — сначала убедиться, что поза находит затяжки.
+# Образ собирается с CUDA-сборкой PyTorch (cu126), поза и детекторы предмета работают на видеокарте, CLIP — через SD_TORCH_DEVICE=cuda. RTMPose остаётся на CPU (onnxruntime без CUDA): это мелкая модель.
+x-sd-gpu: &sd-gpu
+  image: smoking-detection:gpu
+  build:
+    context: .
+    args:
+      TORCH_INDEX: https://download.pytorch.org/whl/cu126
+  environment:
+    SD_OLLAMA_URL: http://ollama:11434
+    SD_THREADS: ${SD_THREADS:-4}
+    SD_TORCH_DEVICE: cuda
+    HF_HUB_DISABLE_TELEMETRY: "1"
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+services:
+  ui:
+    <<: *sd-gpu
+  cli:
+    <<: *sd-gpu
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

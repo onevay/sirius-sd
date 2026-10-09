@@ -126,6 +126,22 @@ def all_cycles_features(an: Path = AN, vlm: Path | None = None, dataset: Path | 
     return _attach_features(_cycles_with_durations(an), an, vlm, only_vlm=False, dataset=dataset)
 
 
+def with_detectors(t: pd.DataFrame, detectors: list[str]) -> pd.DataFrame:
+    """Копия таблицы, где `obj_any_*` — максимум только по перечисленным детекторам (остальные колонки предмета остаются): классификатор для профиля с меньшим числом детекторов
+    обучается на тех же признаках, что получит в работе."""
+    t = t.copy()
+    for suffix in ("max_conf", "hit_frames"):
+        cols = [f"obj_{d}_{suffix}" for d in detectors]
+        miss = [c for c in cols if c not in t.columns]
+        if miss:
+            raise KeyError(f"в таблице нет колонок {miss}: детекторы не считались (`sd enrich`)")
+        t[f"obj_any_{suffix}"] = t[cols].max(axis=1)
+    hit = [f"obj_{d}_hit" for d in detectors if f"obj_{d}_hit" in t.columns]
+    if hit:
+        t["obj_any_hit"] = t[hit].astype(float).max(axis=1)
+    return t
+
+
 def _derived(t: pd.DataFrame) -> pd.DataFrame:
     """Производные признаки, которые попадут в вектор цикла: «любой детектор предмета», X-CLIP «курение против остального», VideoMAE smoking."""
     t = t.copy()

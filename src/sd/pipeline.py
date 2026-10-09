@@ -29,7 +29,7 @@ from . import analysis as A
 from . import feature_auc as FA
 from . import stages
 from .config import stable_hash
-from .paths import OUTPUTS, ROOT, video_id
+from .paths import OUTPUTS, ROOT, portable, video_id
 
 Progress = Callable[[str, int, int], None] | None
 KEY = ["video", "tid", "start"]
@@ -47,6 +47,12 @@ class Options:
     render: bool = False
     camera_id: str = "cam_local"
     backend: str = "auto"                    # рантайм эмбеддингов фото-модели: auto | ov | torch
+    fusion: dict | None = None               # позднее слияние сигналов (VLM, предмет, фото) с оценкой классификатора — см. fusion.py; None/нулевые веса = выключено
+    allow_heuristic: bool = False            # без классификатора цикла `recognize` отказывается работать, пока это не разрешено явно (отладка)
+
+
+class ClassifierRequired(ValueError):
+    """Не задан классификатор цикла. Он обязателен: эвристика по паузе не отличает курение от питья и телефона."""
 
 
 @dataclass
@@ -67,8 +73,9 @@ def _sha(path: Path) -> str:
 
 
 def _abs(p: str | Path) -> Path:
-    p = Path(p)
-    return p if p.is_absolute() else ROOT / p
+    from .paths import repo_path
+
+    return repo_path(p)
 
 
 def bundle_info(p: str | Path | None, kind: str) -> dict | None:
@@ -120,6 +127,8 @@ def recognize(video: str | Path, start: float, end: float | None, cfg: dict, opt
     from .dataset import build_cycle_table
     from .pose_feats import pose_rows
 
+    if not opts.cycle_bundle and not opts.allow_heuristic:
+        raise ClassifierRequired("не задан классификатор цикла (cycle_bundle): он обязателен; для отладки без него — allow_heuristic=True / options.allow_heuristic: true")
     video = Path(video)
     clip = video.stem
     t_all = time.perf_counter()
@@ -160,12 +169,29 @@ def recognize(video: str | Path, start: float, end: float | None, cfg: dict, opt
         tick("feat_kinematics_pose", t0)
         if opts.objects:
             t0 = time.perf_counter()
-            pd.DataFrame(A.evidence_rows(cycles, tr, ser, cfg, list(opts.objects))).to_parquet(an / "evidence_cycles.parquet", index=False)
+            from . import enrich as EN
+
+            ed = EN.clip_dir(vname)
+            ev_rows = EN.cached_evidence(cycles, cfg, opts.objects, ed)           # те же циклы, параметры и веса → из кэша `outputs/enrich` (минуты → секунды)
+            if ev_rows is None:
+                ev_rows = pd.DataFrame(A.evidence_rows(cycles, tr, ser, cfg, list(opts.objects)))
+                EN.save_evidence(ev_rows, cfg, opts.objects, ed)
+            else:
+                timing["feat_object_cached"] = 1.0
+            ev_rows.to_parquet(an / "evidence_cycles.parquet", index=False)
             tick("feat_object", t0)
         if opts.photo_bundle:
             t0 = time.perf_counter()
-            A.photo_all(cycles, _abs(opts.photo_bundle), opts.backend, out=an / "photo_cycles.parquet", ctx=ctx,
-                        progress=(lambda tag, i, n: progress(f"фото-модель · {tag}", i, n)) if progress else None)
+            from . import enrich as EN
+
+            pd_, pb = EN.clip_dir(vname), _abs(opts.photo_bundle)
+            ph = EN.cached_photo(cycles, pb, pd_)                                   # те же циклы и тот же пакет → из кэша `outputs/enrich`
+            if ph is not None:
+                ph.to_parquet(an / "photo_cycles.parquet", index=False)
+                timing["feat_photo_cached"] = 1.0
+            else:
+                A.photo_all(cycles, pb, opts.backend, out=an / "photo_cycles.parquet", ctx=ctx,
+                            progress=(lambda tag, i, n: progress(f"фото-модель · {tag}", i, n)) if progress else None)
             tick("feat_photo", t0)
         tab = _with_end(FA.all_cycles_features(an=an, vlm=None, dataset=an / "dataset_cycles.parquet"))
         # ---- 3. оценка цикла: дешёвый пакет
@@ -209,9 +235,21 @@ def recognize(video: str | Path, start: float, end: float | None, cfg: dict, opt
                 score = cascade(score, avail, s_full)
             elif "vlm_yesno" in tab and tab["vlm_yesno"].notna().any():
                 warnings.append("VLM посчитан, но пакет с VLM-признаком (cycle_bundle_full) не задан: итоговая оценка = оценка дешёвого пакета; ответы VLM показаны в таблице")
+        from . import fusion as FU
+
+        spec = FU.FusionSpec.from_dict(opts.fusion)
+        if spec.active:        # поправка к оценке классификатора; вектор его признаков не меняется (fusion.py)
+            fused, contrib = FU.fuse(score, tab, spec)
+            if not contrib.to_numpy().any():
+                warnings.append("слияние включено, но ни у одного цикла нет нужных сигналов (VLM / предмет / фото-модель не посчитаны): оценки не изменились")
+            tab = pd.concat([tab.drop(columns=[c for c in contrib.columns if c in tab.columns]), contrib], axis=1)
+            tab["score_base"] = score
+            score = fused
         tab["score"] = score
         scored = tab
     scores = {(int(r.tid), round(float(r.start), 3)): float(r.score) for r in scored.itertuples() if hasattr(r, "score") and np.isfinite(r.score)} if len(scored) and "score" in scored else {}
+    if scores and len(scored) > len(scores):   # цикл без оценки классификатора (NaN) получает в сборке эвристику по длительности паузы — шкалы разные, это надо видеть
+        warnings.append(f"{len(scored) - len(scores)} из {len(scored)} циклов без оценки классификатора: для них в сборке событий использована эвристика по длительности паузы")
 
     # ---- 5. события по регламенту
     t0 = time.perf_counter()
@@ -234,7 +272,7 @@ def recognize(video: str | Path, start: float, end: float | None, cfg: dict, opt
         render_video(video, tr, cfg, out_dir / "overlay.mp4", renderer=r, progress=pr("видео с разметкой"))
         tick("render", t0)
 
-    meta = dict(video=str(video), clip=clip, window=[start, end], run_dir=str(rd), out_dir=str(out_dir), created=time.strftime("%Y-%m-%d %H:%M:%S"),
+    meta = dict(video=portable(video), clip=clip, window=[start, end], run_dir=portable(rd), out_dir=portable(out_dir), created=time.strftime("%Y-%m-%d %H:%M:%S"),
                 counts=dict(cycles=int(len(cycles)), rejected=int(len(rej)), events=int(len(ev_df)), people=int(len(tr.tids)),
                             vlm_calls=int(scored["vlm_called"].sum()) if "vlm_called" in scored else 0),
                 options={k: (list(v) if isinstance(v, tuple) else v) for k, v in asdict(opts).items()},

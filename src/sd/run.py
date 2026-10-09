@@ -19,6 +19,8 @@ from pathlib import Path
 import pandas as pd
 
 from . import experiments as XP
+from .paths import from_portable
+from . import preds_check as PC
 from . import library as LIB
 from . import profiles as PR
 from . import roi as ROI
@@ -35,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--render", type=Path, default=None, help="каталог для видео с разметкой")
     ap.add_argument("--max-sec", type=float, default=None, help="обрабатывать только первые N секунд каждого клипа")
     ap.add_argument("--no-cache", action="store_true", help="не брать результаты из кэша")
+    ap.add_argument("--solver", default=None, help="решатель: *.sdsolver.zip, каталог или имя установленного (вместо --profile)")
+    ap.add_argument("--classifier", default=None, help="классификатор цикла (models/cycle/<имя>); обязателен, подменяет выбранный в профиле")
     a = ap.parse_args(argv)
 
     src = Path(a.input)
@@ -42,7 +46,14 @@ def main(argv: list[str] | None = None) -> int:
     if not videos:
         print(f"в {src} нет видео", file=sys.stderr)
         return 2
-    prof = PR.load(a.profile) if a.profile else PR.default_profile()
+    from . import solver as SV
+
+    prof = RN.with_classifier(SV.resolve_profile(a.solver) if a.solver else (PR.load(a.profile) if a.profile else PR.default_profile()), a.classifier)
+    errs = SV.errors(prof)
+    if errs:
+        for e in errs:
+            print(f"! {e.text}", file=sys.stderr)
+        return 2
     th = prof.threshold if a.threshold is None else a.threshold
     zones = ROI.load(a.roi) if a.roi else None
     rec = None
@@ -53,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
             from . import pipeline as P
 
             res = P.recognize(video, start, end, profile.cfg(), profile.options_obj(render=True))
-            f = Path(res.meta["out_dir"]) / "overlay.mp4"
+            f = from_portable(res.meta["out_dir"]) / "overlay.mp4"
             if f.exists():
                 shutil.copyfile(f, a.render / f"{Path(video).stem}.mp4")
             return res
@@ -68,11 +79,23 @@ def main(argv: list[str] | None = None) -> int:
         allev = allev.assign(camera_id=allev.clip_id.map(cam), clip_id=allev.clip_id.map(stem))
         allev["event_id"] = [f"{c}_{i:04d}" for c, i in zip(allev.clip_id, allev.groupby("clip_id").cumcount() + 1)]
     out = allev[allev.confidence >= th][RN.EVENT_COLUMNS] if len(allev) else allev
+    sizes = {}
+    for r in runs:                      # размер кадра нужен проверке «рамка внутри кадра»; не открывается — проверку пропускаем
+        try:
+            from .video_io import probe
+
+            i = probe(r.video)
+            sizes[r.video.stem] = (i.width, i.height)
+        except Exception:
+            pass
+    issues = PC.validate(out, sizes)
+    for w in issues:
+        print(f"! формат: {w}", file=sys.stderr)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(a.out, index=False)
     allev.to_csv(a.out.with_suffix(".all.csv"), index=False)
     man = dict(profile=prof.to_dict(), describe=prof.describe(), fingerprint=prof.fingerprint(), confidence_threshold=th, roi=a.roi, input=str(src), clips=len(videos),
-               events_total=int(len(allev)), events_written=int(len(out)), errors={r.clip_id: r.error for r in runs if r.error}, seconds=round(time.perf_counter() - t0, 1),
+               events_total=int(len(allev)), format_issues=issues, events_written=int(len(out)), errors={r.clip_id: r.error for r in runs if r.error}, seconds=round(time.perf_counter() - t0, 1),
                per_clip_seconds={r.clip_id: r.seconds for r in runs}, created_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"), git=XP.git_state())
     a.out.with_suffix(".manifest.json").write_text(json.dumps(man, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(f"события: {len(out)} из {len(allev)} (порог {th}); {a.out}")

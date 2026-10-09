@@ -1,0 +1,15 @@
+name: rt
+description: "Лёгкая конфигурация для реального времени на этом ПК (i3-1115G4, iGPU): YOLO26n@960 на OpenVINO iGPU, RTMPose-s только у людей с рукой у лица (gate_s), 5 к/с, предмет — детектор Beehzod YOLO11m на iGPU (OpenVINO), фото-признак — zero-shot CLIP на iGPU; классификатор цикла cycle_rt (обучен на признаках ЭТОЙ конфигурации). Кандидат на замену mvp: сначала проверка точности и скорости."
+config:
+  video.process_fps: 5
+  pose.refine.gate_s: 3.0
+  pose.refine.gate_hold_sec: 1.0
+  evidence.runtime: openvino
+  evidence.device: "intel:gpu"
+  events.cycle_th: 0.4
+  events.confidence_threshold: 0.55
+options:
+  cycle_bundle: models/cycle/cycle_rt
+  photo_bundle: models/photo/photo_v2
+  objects: [smoking_yolo11m_beehzod]
+  vlm_mode: "off"

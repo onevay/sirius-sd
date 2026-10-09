@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Детектор курения</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%235ed3c0'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="rail" id="rail">
+    <div class="logo" title="Детектор курения"><svg viewBox="0 0 48 48" width="46" height="46"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5ed3c0"/><stop offset="1" stop-color="#8fe0a8"/></linearGradient></defs><path d="M6 12c0 14 8 26 18 26s18-12 18-26" fill="none" stroke="url(#lg)" stroke-width="7" stroke-linecap="round"/><circle cx="24" cy="12" r="5" fill="none" stroke="#5ed3c0" stroke-width="4"/></svg></div>
+    <div class="rail-sep"></div>
+    <nav class="rail-nav" id="nav"></nav>
+    <div class="grow"></div>
+    <div id="navBottom"></div>
+  </aside>
+  <div class="content">
+    <header class="head">
+      <div>
+        <h1>Детектор курения</h1>
+        <div class="sub" id="subArea">—</div>
+        <div class="sub"><span id="subDate"></span>, <span class="live"><i></i>real time</span></div>
+      </div>
+      <div class="grow"></div>
+      <div class="head-tools">
+        <div class="search"><span class="ico" data-i="search"></span><input id="search" placeholder="Поиск места" autocomplete="off"><button class="go" id="searchGo" aria-label="Найти"><span data-i="chev"></span></button><div class="suggest hidden" id="suggest"></div></div>
+        <button class="circle" id="theme" title="Светлая / тёмная тема" aria-label="Тема"><span data-i="moon"></span></button>
+        <a class="circle bell" href="#/alerts" title="Тревоги" id="bell"><span data-i="bell"></span><b class="dotbadge hidden" id="pendingBadge">0</b></a>
+        <input id="operator" class="op" placeholder="Оператор" aria-label="Имя оператора">
+      </div>
+    </header>
+    <main id="view"></main>
+  </div>
+</div>
+<div id="toast" class="toast hidden" role="status"></div>
+<script src="/core.js"></script>
+<script src="/map.js"></script>
+<script src="/analysis.js"></script>
+<script src="/admin.js"></script>
+<script src="/tune.js"></script>
+<script src="/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+name: stream_cpu6
+description: "Поток на ПК с 6 ГБ ОЗУ без дискретной GPU: поза YOLO26n@960 на OpenVINO (CPU/iGPU), без уточнения RTMPose, 6 к/с, быстрый классификатор cycle_fast. Один процесс, одна камера за раз; пик памяти ≈ 1.5–2 ГБ. НЕ ИЗМЕРЕН на этой машине: проверьте `sd replay <клип> -p stream_cpu6`; если rt_factor < 1 — снизьте pose.imgsz до 800 или video.process_fps до 5."
+config:
+  pose.weights: yolo26n-pose
+  pose.runtime: openvino
+  pose.device: "intel:cpu"
+  pose.imgsz: 960
+  pose.refine.enabled: false
+  video.process_fps: 6
+  events.cycle_th: 0.4
+  events.confidence_threshold: 0.55
+options:
+  cycle_bundle: models/cycle/cycle_fast
+  vlm_mode: "off"

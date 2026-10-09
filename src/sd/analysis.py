@@ -90,7 +90,7 @@ def pose_all(out: Path = OUTPUTS / "analysis" / "pose_cycles.parquet", progress=
 
 
 def photo_all(cycles: pd.DataFrame, bundle_dir: Path, backend: str = "auto", frames: int = 6, window: float = 2.5, scale: float = 2.5,
-              out: Path = OUTPUTS / "analysis" / "photo_cycles.parquet", progress=None, zero_shot: bool = True, ctx: dict | None = None) -> pd.DataFrame:
+              out: Path = OUTPUTS / "analysis" / "photo_cycles.parquet", progress=None, zero_shot: bool = True, ctx: dict | None = None, only_zsd: bool = False) -> pd.DataFrame:
     """Группа I: оценка «курит» фото-классификатором по кропам рта цикла (6 кадров): среднее, максимум и топ-2 по кадрам; + zero-shot CLIP (если есть эмбеддинг clip)."""
     from . import photo_clf as PC
     from . import photo_feats as PF
@@ -99,12 +99,19 @@ def photo_all(cycles: pd.DataFrame, bundle_dir: Path, backend: str = "auto", fra
     bundle = PC.load_bundle(Path(bundle_dir))
     crops = PV.extract_crops(cycles, frames, window, 224, scale, progress=(lambda i, n: progress("crops", i, n)) if progress else None, ctx=ctx)
     ft = PV.frame_table(crops)
-    emb = PV.embed_crops(ft, tuple(bundle["manifest"]["backbones"]) if not zero_shot else tuple(dict.fromkeys(list(bundle["manifest"]["backbones"]) + ["clip"])),
-                         backend, progress=(lambda bb, i, n, dt: progress(f"embed {bb}", i, n)) if progress else None)
-    per = {"p": PV.score_frames(bundle, emb)}
+    if ft.empty:        # ни у одного цикла не нашлось кадров рта: фото-признаки останутся пропусками, а не ошибкой
+        df = pd.DataFrame(columns=PV.KEY)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(out, index=False)
+        return df
+    # only_zsd: классификатору нужны только признаки zero-shot CLIP (`photo_zsd_*`) — второй backbone (ConvNeXt, сотни МБ на CPU) и оценка пакета по кадрам не считаются
+    bbs = ("clip",) if only_zsd else (tuple(bundle["manifest"]["backbones"]) if not zero_shot else tuple(dict.fromkeys(list(bundle["manifest"]["backbones"]) + ["clip"])))
+    emb = PV.embed_crops(ft, bbs, backend, progress=(lambda bb, i, n, dt: progress(f"embed {bb}", i, n)) if progress else None)
+    per = {} if only_zsd else {"p": PV.score_frames(bundle, emb)}
     if zero_shot and "clip" in emb:
         z = PF.zero_shot(emb["clip"], PF.clip_text_embeddings())
         per["zs"] = z["smoke"] - z["none"]
+        per["zsd"] = z["smoke"] - np.maximum(z["drink"], z["phone"])        # «курение» против ближайших жестов-двойников (питьё, телефон)
     df = PV.aggregate(ft, per)
     df["start"] = df.start.round(3)
     out.parent.mkdir(parents=True, exist_ok=True)

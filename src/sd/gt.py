@@ -18,6 +18,7 @@ import os
 import tempfile
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -31,6 +32,35 @@ LABEL_SET = ("POSITIVE", "NEGATIVE", "IGNORE")
 COLUMNS = ["id", "clip_id", "camera_id", "person_gt_id", "start_sec", "end_sec", "label", "peak_sec", "x1", "y1", "x2", "y2", "note", "labeler", "ts"]
 ORGANIZER_COLUMNS = ["camera_id", "clip_id", "person_gt_id", "start_sec", "end_sec", "label", "peak_sec", "x1", "y1", "x2", "y2"]
 NUM = ["start_sec", "end_sec", "peak_sec", "x1", "y1", "x2", "y2"]
+
+
+@contextmanager
+def locked(path: str | Path | None = None, timeout: float = 15.0):
+    """Эксклюзивная блокировка на время «прочитать → изменить → записать» (файл-замок рядом с CSV; кроссплатформенно). Разметчик и `feedback-export` пишут один и тот же файл —
+    без замка одновременная запись теряла бы строки. Замок старше 60 с считается брошенным (процесс упал) и снимается."""
+    p = Path(path) if path else default_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    lock = p.with_suffix(p.suffix + ".lock")
+    t0 = time.time()
+    while True:
+        try:
+            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            break
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > 60:
+                    lock.unlink(missing_ok=True)
+                    continue
+            except OSError:
+                pass
+            if time.time() - t0 > timeout:
+                raise TimeoutError(f"файл эталона занят другим процессом: {lock}")
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 def default_path() -> Path:
@@ -66,7 +96,14 @@ def save(df: pd.DataFrame, path: str | Path | None = None) -> Path:
     os.close(fd)
     try:
         df[COLUMNS].to_csv(tmp, index=False, encoding="utf-8-sig")
-        os.replace(tmp, p)
+        for attempt in range(8):           # Windows: антивирус/индексатор на мгновение держит файл — замена даёт PermissionError; повторяем, а не теряем правку
+            try:
+                os.replace(tmp, p)
+                break
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
@@ -93,29 +130,32 @@ def add(clip_id: str, start: float, end: float, label: str, *, person: str | int
     rid = uuid.uuid4().hex[:8]
     row = dict(id=rid, clip_id=str(clip_id), camera_id=camera_id, person_gt_id=str(person) if person != "" else "", start_sec=round(start, 3), end_sec=round(end, 3),
                label=label, peak_sec=round(peak, 3), x1=b[0], y1=b[1], x2=b[2], y2=b[3], note=note, labeler=labeler, ts=time.strftime("%Y-%m-%dT%H:%M:%S"))
-    df = load(path)
-    save(pd.concat([df, pd.DataFrame([row])], ignore_index=True), path)
+    with locked(path):
+        df = load(path)
+        save(pd.concat([df, pd.DataFrame([row])], ignore_index=True), path)
     return rid
 
 
 def update(row_id: str, path: str | Path | None = None, **fields) -> bool:
-    df = load(path)
-    m = df["id"] == row_id
-    if not m.any():
-        return False
-    for k, v in fields.items():
-        if k in COLUMNS and k != "id":
-            df.loc[m, k] = str(v).upper() if k == "label" else v
-    save(df, path)
+    with locked(path):
+        df = load(path)
+        m = df["id"] == row_id
+        if not m.any():
+            return False
+        for k, v in fields.items():
+            if k in COLUMNS and k != "id":
+                df.loc[m, k] = str(v).upper() if k == "label" else v
+        save(df, path)
     return True
 
 
 def delete(ids: Iterable[str], path: str | Path | None = None) -> int:
     ids = set(ids)
-    df = load(path)
-    keep = df[~df["id"].isin(ids)]
-    if len(keep) != len(df):
-        save(keep, path)
+    with locked(path):
+        df = load(path)
+        keep = df[~df["id"].isin(ids)]
+        if len(keep) != len(df):
+            save(keep, path)
     return len(df) - len(keep)
 
 
@@ -125,8 +165,8 @@ def for_clip(df: pd.DataFrame, clip_id: str) -> pd.DataFrame:
 
 def mark_clean(clip_id: str, duration: float, *, camera_id: str = "", labeler: str = "", path: str | Path | None = None) -> str:
     """«Весь клип без курения»: NEGATIVE на всю длительность. Прежние NEGATIVE-строки на весь клип не дублируются."""
-    df = load(path)
-    old = df[(df.clip_id == clip_id) & (df.label == "NEGATIVE") & (df.start_sec <= 0.05) & (df.end_sec >= duration - 0.5)]
+    old = load(path)
+    old = old[(old.clip_id == clip_id) & (old.label == "NEGATIVE") & (old.start_sec <= 0.05) & (old.end_sec >= duration - 0.5)]
     if len(old):
         return str(old["id"].iloc[0])
     return add(clip_id, 0.0, max(float(duration), 0.1), "NEGATIVE", note="весь клип без курения", camera_id=camera_id, labeler=labeler, path=path)
@@ -198,10 +238,11 @@ def import_rows(new: pd.DataFrame, path: str | Path | None = None, replace_clips
     n["id"] = [uuid.uuid4().hex[:8] for _ in range(len(n))]
     n["peak_sec"] = n["peak_sec"].fillna((n.start_sec + n.end_sec) / 2)
     n["ts"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-    df = load(path)
-    if replace_clips:
-        df = df[~df.clip_id.isin(set(n.clip_id))]
-    save(pd.concat([df, n[COLUMNS]], ignore_index=True), path)
+    with locked(path):
+        df = load(path)
+        if replace_clips:
+            df = df[~df.clip_id.isin(set(n.clip_id))]
+        save(pd.concat([df, n[COLUMNS]], ignore_index=True), path)
     return len(n)
 
 

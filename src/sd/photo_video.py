@@ -68,7 +68,7 @@ def frame_table(crops: pd.DataFrame) -> pd.DataFrame:
     for r in crops.itertuples():
         for p in sorted(Path(r.dir).glob("*.jpg")):
             out.append(dict(video=r.video, tid=r.tid, start=r.start, path=str(p)))
-    return pd.DataFrame(out)
+    return pd.DataFrame(out, columns=[*KEY, "path"])          # колонки есть и у пустой таблицы: циклы без кропов (рот не виден) не должны ронять разбор
 
 
 def embed_crops(ft: pd.DataFrame, backbones=("clip", "convnext"), backend: str = "auto", progress=None) -> dict[str, np.ndarray]:
@@ -80,6 +80,8 @@ def embed_crops(ft: pd.DataFrame, backbones=("clip", "convnext"), backend: str =
 
 def aggregate(ft: pd.DataFrame, per_frame: dict[str, np.ndarray], prefix: str = "photo") -> pd.DataFrame:
     """Кадровые оценки → признаки цикла: среднее, максимум, среднее по двум лучшим кадрам, число кадров."""
+    if ft.empty:
+        return pd.DataFrame(columns=KEY)
     d = ft[KEY].copy()
     for name, s in per_frame.items():
         d[name] = s

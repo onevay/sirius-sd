@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from .evaluate import iou
+from .paths import from_portable
 
 
 @dataclass
@@ -31,8 +32,10 @@ class Tracks:
     @classmethod
     def load(cls, d: str | Path) -> "Tracks":
         d = Path(d)
-        return cls(pd.read_parquet(d / "tracks.parquet"), np.load(d / "keypoints.npy"), pd.read_parquet(d / "frame_t.parquet"),
-                   json.loads((d / "meta.json").read_text(encoding="utf-8")))
+        meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+        if meta.get("video"):   # путь к видео хранится переносимо ($DATA/…); здесь он снова становится рабочим путём этой машины
+            meta["video"] = str(from_portable(meta["video"]))
+        return cls(pd.read_parquet(d / "tracks.parquet"), np.load(d / "keypoints.npy"), pd.read_parquet(d / "frame_t.parquet"), meta)
 
     # ------------------------------------------------------------------ access
     @property

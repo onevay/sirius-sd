@@ -2,20 +2,22 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from ._env import ROOT
+from ._env import ROOT, env_path
 
-DATA = ROOT / "data"
-MODELS = ROOT / "models"
-OUTPUTS = ROOT / "outputs"
+# Каталоги по умолчанию лежат внутри проекта; на другой машине их можно вынести переменными SD_DATA / SD_EXTERNAL / SD_MODELS / SD_OUTPUTS / SD_LABELS (или файлом .env).
+DATA = env_path("SD_DATA", ROOT / "data")
+MODELS = env_path("SD_MODELS", ROOT / "models")
+OUTPUTS = env_path("SD_OUTPUTS", ROOT / "outputs")
 CONFIGS = ROOT / "configs"
 DOCS = ROOT / "docs"
-LABELS = ROOT / "labels"
+LABELS = env_path("SD_LABELS", ROOT / "labels")
+STREAMS = env_path("SD_STREAMS", ROOT / "streams")   # имитация камер для мониторинга: папки <район>-<индекс>-<время начала>
 
 # папки данных пользователя -> слабая (клип-уровня) метка
 WEAK_LABEL_BY_FOLDER = {"курение": "smoking", "лжекурение": "fake"}
-EXTERNAL = ROOT / "data_external"   # скачанные вручную открытые датасеты: data_external/<источник>/<датасет>/<класс>/клип
+EXTERNAL = env_path("SD_EXTERNAL", ROOT / "data_external")   # скачанные вручную открытые датасеты: data_external/<источник>/<датасет>/<класс>/клип
 # имена папок-классов внешних датасетов, означающие «курение» (HMDB51 `smoke`, Kinetics `smoking`); регистр, пробелы и дефисы не важны
 SMOKING_CLASSES = {"smoking", "smoke", "smoking_hookah", "smoking_pipe", "курение"}
 VIDEO_EXT = {".mp4", ".mkv", ".wmv", ".avi", ".mov", ".m4v", ".webm", ".ts"}
@@ -81,3 +83,63 @@ def resolve_video(arg: str | Path) -> Path:
     if len(cands) > 1:
         raise FileNotFoundError(f"«{arg}» неоднозначно, подходит: " + ", ".join(video_id(c) for c in cands))
     raise FileNotFoundError(f"Видео не найдено: {arg}")
+
+
+# ------------------------------------------------------------------------------------------ переносимые пути
+# В артефактах (мета запусков, журнал экспериментов, треки) пути хранятся не абсолютными, а «от корня»: `$DATA/курение/a.mp4`, `$OUTPUTS/runs/…`.
+# Тогда скопированная на другую машину папка outputs/ открывается без правок, даже если данные лежат в другом месте.
+def _roots() -> list[tuple[str, Path]]:
+    return [("$EXTERNAL", EXTERNAL), ("$DATA", DATA), ("$OUTPUTS", OUTPUTS), ("$MODELS", MODELS), ("$LABELS", LABELS), ("$ROOT", ROOT)]
+
+
+def portable(p: str | Path | None) -> str | None:
+    """Путь → строка с токеном корня (`$DATA/…`) или абсолютная POSIX-строка, если путь вне известных корней."""
+    if p is None or str(p) == "":
+        return None
+    q = Path(p)
+    if not q.is_absolute():
+        q = Path.cwd() / q
+    for tok, root in _roots():
+        for base in (root, root.resolve()):
+            try:
+                return f"{tok}/{q.relative_to(base).as_posix()}"
+            except ValueError:
+                continue
+    return q.as_posix()
+
+
+def repo_path(p: str | Path) -> Path:
+    """Путь из профиля/конфига → рабочий путь этой машины. Относительные `models/…`, `data/…`, `outputs/…`, `labels/…` разворачиваются от СООТВЕТСТВУЮЩИХ каталогов (с учётом SD_MODELS и др.),
+    остальные относительные — от корня проекта; абсолютные не трогаются. Иначе профиль со ссылкой `models/cycle/x` не находил бы пакет при `SD_MODELS` вне проекта."""
+    q = Path(p)
+    if q.is_absolute():
+        return q
+    first, rest = (q.parts[0] if q.parts else ""), q.parts[1:]
+    for name, root in (("models", MODELS), ("data", DATA), ("data_external", EXTERNAL), ("outputs", OUTPUTS), ("labels", LABELS)):
+        if first == name:
+            return root.joinpath(*rest)
+    return ROOT / q
+
+
+def from_portable(s: str | Path | None) -> Path | None:
+    """Обратное к `portable`. Понимает и «чужие» абсолютные пути (в т.ч. Windows `C:\\…` из старых артефактов): если файла нет, ищет по хвосту пути (1–3 последних
+    компонента) в `data/` и `data_external/`."""
+    if s is None or str(s) == "":
+        return None
+    t = str(s)
+    for tok, root in _roots():
+        if t.startswith(tok + "/"):
+            rel = PurePosixPath(t[len(tok) + 1:])
+            return root / rel if ".." not in rel.parts else root     # `$DATA/../../etc` не выводит за корень
+    p = Path(t)
+    if p.exists():
+        return p
+    parts = PureWindowsPath(t).parts if re.match(r"^[A-Za-z]:[\\/]", t) or "\\" in t else PurePosixPath(t).parts
+    for k in (3, 2, 1):
+        if len(parts) < k:
+            continue
+        for base in (DATA, EXTERNAL):
+            cand = base.joinpath(*parts[-k:])
+            if cand.exists():
+                return cand
+    return p

@@ -23,7 +23,7 @@ from .paths import OUTPUTS, ROOT, slug
 
 EXP_DIR = OUTPUTS / "experiments"
 INDEX_COLUMNS = ["id", "created", "name", "mode", "role", "clips", "f1", "ci_lo", "ci_hi", "precision", "recall", "tp", "fp", "fn", "fp_per_hour", "threshold", "target_f1", "reached",
-                 "dirs", "pose", "cycle_model", "vlm"]
+                 "dirs", "failed", "pose", "cycle_model", "vlm"]
 
 
 def git_state() -> dict:
@@ -76,7 +76,7 @@ def list_runs(root: Path | None = None) -> pd.DataFrame:
         rows.append(dict(id=m["id"], created=m.get("created"), name=m.get("name"), mode=r.get("mode"), role=m.get("role"), clips=mt.get("clips"), f1=mt.get("f1"), ci_lo=f1ci[0], ci_hi=f1ci[1],
                          precision=mt.get("precision"), recall=mt.get("recall"), tp=mt.get("tp"), fp=mt.get("fp"), fn=mt.get("fn"), fp_per_hour=mt.get("fp_per_hour"),
                          threshold=mt.get("threshold"), target_f1=bd.get("target"), reached=bd.get("reached"), dirs=", ".join(Path(x).name for x in m.get("dirs", [])),
-                         pose=d.get("pose"), cycle_model=d.get("cycle_model"), vlm=d.get("vlm")))
+                         failed=sum(1 for c in m.get("clips", []) if c.get("error")), pose=d.get("pose"), cycle_model=d.get("cycle_model"), vlm=d.get("vlm")))
     df = pd.DataFrame(rows, columns=INDEX_COLUMNS)
     return df.sort_values("created", ascending=False).reset_index(drop=True) if len(df) else df
 

@@ -1,0 +1,17 @@
+name: laptop_gpu4
+description: "Профиль для ноутбука с NVIDIA 4 ГБ VRAM и 16 ГБ ОЗУ (Docker, образ с CUDA — docker-compose.gpu.yml): поза YOLO26s@1600 на CUDA (веса 24 МБ, пик ≈1–1.5 ГБ VRAM; этапы идут последовательно, детекторы предмета и CLIP на той же карте — до 2 ГБ суммарно) + RTMPose-m, тот же классификатор cycle_mvp и пороги. НЕ ИЗМЕРЕН на этой машине: проверьте `sd ladder --configs gpu_s1600,gpu_m1600` (страница «Задачи») и `sd eval` перед использованием. Для VLM (Qwen3.5-2B q4, ≈1.9 ГБ) задайте vlm_model после проверки свободной памяти."
+config:
+  pose.weights: yolo26s-pose
+  pose.runtime: torch
+  pose.device: "cuda:0"
+  pose.imgsz: 1600
+  pose.refine.method: rtmpose-m
+  pose.refine.device: cuda
+  evidence.device: "0"
+  events.cycle_th: 0.4
+  events.confidence_threshold: 0.55
+options:
+  cycle_bundle: models/cycle/cycle_mvp
+  photo_bundle: models/photo/photo_v2
+  objects: [smoking_yolo11m_beehzod, smoking_yolo26s_basant18]
+  vlm_mode: "off"

@@ -24,10 +24,10 @@ from .config import stable_hash
 from .cycles import STATE_ID, Cycle, find_cycles
 from .events import Event, ScoredCycle, build_events, events_to_frame, heuristic_cycle_score
 from .features import build_series, kp_threshold, track_grid, visibility_fraction
-from .paths import OUTPUTS, video_id
+from .paths import OUTPUTS, portable, video_id
 from .pose_track import PoseTracker
 from .tracks import Tracks, stitch_tracks
-from .video_io import choose_stride, iter_frames, probe
+from .video_io import choose_stride, iter_frames, prefetch, probe
 
 Progress = Callable[[int, int], None] | None
 
@@ -35,7 +35,8 @@ Progress = Callable[[int, int], None] | None
 def run_id_for(cfg: dict, start: float, end: float | None) -> str:
     p, t = cfg["pose"], cfg["tracking"]
     span = f"{start:g}-{'end' if end is None else format(end, 'g')}s"
-    ref = f"_ref-{p['refine'].get('method', 'yolo')}" if p["refine"]["enabled"] else ""
+    rf = p["refine"]
+    ref = (f"_ref-{rf.get('method', 'yolo')}" + ("-ov" if rf.get("backend") == "openvino" else "") + (f"-h{int(rf['min_height_px'])}" if int(rf.get("min_height_px", 20)) != 20 else "") + (f"-g{rf['gate_s']:g}" if float(rf.get("gate_s", 0)) > 0 else "")) if rf["enabled"] else ""
     return (f"{span}_{p['weights']}_{p['runtime']}{'' if p['runtime'] == 'torch' else '-' + p['device'].split(':')[-1]}_{p['imgsz']}{ref}"
             f"_{t['tracker']}-{stable_hash(t, 4)}_{cfg['video']['process_fps']:g}fps")
 
@@ -115,7 +116,7 @@ def stage_pose(video: str | Path, cfg: dict, start: float = 0.0, end: float | No
     rows, kps, frame_t, raw = [], [], [], []
     t_wall = time.perf_counter()
     warmup = 0.0
-    for i, fr in enumerate(iter_frames(video, start, end, stride, max_frames)):
+    for i, fr in enumerate(prefetch(iter_frames(video, start, end, stride, max_frames))):
         frame_t.append((fr.idx, fr.t))
         for d in pt.step(fr.img, fr.t):
             rows.append((fr.idx, fr.t, d.tid, *d.box.tolist(), d.score, float(d.box[3] - d.box[1])))
@@ -130,7 +131,7 @@ def stage_pose(video: str | Path, cfg: dict, start: float = 0.0, end: float | No
     df = pd.DataFrame(rows, columns=["frame", "t", "tid", "x1", "y1", "x2", "y2", "score", "h"])
     kp = np.stack(kps).astype(np.float32) if kps else np.zeros((0, 17, 3), np.float32)
     tr = Tracks(df, kp, pd.DataFrame(frame_t, columns=["frame", "t"]),
-                dict(video=str(video), video_info=info.to_dict(), stride=stride, proc_fps=proc_fps, start=start, end=end,
+                dict(video=portable(video), video_info=info.to_dict(), stride=stride, proc_fps=proc_fps, start=start, end=end,
                      pose=pt.describe(), wall_sec=round(wall, 2), frames_processed=len(frame_t), warmup_sec=round(warmup, 1),
                      fps_wall=round(len(frame_t) / wall, 2) if wall > 0 else None,
                      fps_steady=round((len(frame_t) - 1) / (wall - warmup), 2) if wall - warmup > 0 and len(frame_t) > 1 else None,
@@ -140,6 +141,7 @@ def stage_pose(video: str | Path, cfg: dict, start: float = 0.0, end: float | No
     tr.save(pose_dir)
     pd.DataFrame(raw, columns=["frame", "t", "x1", "y1", "x2", "y2", "conf"]).to_parquet(pose_dir / "raw_dets.parquet", index=False)
     (rd / "run.json").write_text(json.dumps(dict(cfg=_plain(cfg), meta=tr.meta), ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    tr.meta["video"] = str(video)          # на диске путь переносимый ($DATA/…), в памяти — рабочий, как после `Tracks.load`: иначе признаки предмета в этом же процессе не открывали видео
     return tr, rd
 
 
@@ -159,7 +161,8 @@ def stage_features(tr: Tracks, cfg: dict, rd: Path, force: bool = False) -> pd.D
     d = rd / "features" / _feat_hash(cfg)
     f = d / "series.parquet"
     if f.exists() and not force:
-        return pd.read_parquet(f)
+        cached = pd.read_parquet(f)
+        return cached if "tid" in cached.columns else _empty_series()      # кэш запуска без людей, записанный до исправления: пустая таблица без колонок
     parts = []
     for tid in tr.tids:
         rows, kp = tr.of(tid)
@@ -167,10 +170,15 @@ def stage_features(tr: Tracks, cfg: dict, rd: Path, force: bool = False) -> pd.D
         s = build_series(grid, rows, kp, cfg)
         s.insert(0, "tid", tid)
         parts.append(s)
-    out = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+    out = pd.concat(parts, ignore_index=True) if parts else _empty_series()
     d.mkdir(parents=True, exist_ok=True)
     out.to_parquet(f, index=False)
     return out
+
+
+def _empty_series() -> pd.DataFrame:
+    """Запуск без единого человека (пустой кадр, сцена без людей): таблица без строк, но с ключевыми колонками — этапы ниже работают без ветвлений."""
+    return pd.DataFrame({"tid": pd.Series(dtype="int64"), "frame": pd.Series(dtype="int64"), "t": pd.Series(dtype="float64")})
 
 
 # ---------------------------------------------------------------------------------------------- cycles
@@ -179,7 +187,7 @@ def stage_cycles(series: pd.DataFrame, cfg: dict, rd: Path, force: bool = False)
     if (d / "cycles.parquet").exists() and not force:
         return pd.read_parquet(d / "cycles.parquet"), pd.read_parquet(d / "rejected.parquet"), pd.read_parquet(d / "states.parquet")
     cyc_rows, rej_rows, st_rows = [], [], []
-    for tid, s in series.groupby("tid"):
+    for tid, s in (series.groupby("tid") if "tid" in series.columns else []):
         s = s.reset_index(drop=True)
         cycles, rejected, states = find_cycles(s, cfg, tid=int(tid))
         for c in cycles:
@@ -220,7 +228,9 @@ def assemble_events(tr: Tracks, series: pd.DataFrame, cycles: pd.DataFrame, cfg:
               for r in g.itertuples()]
         events += build_events(sc, cfg["events"], tid=int(tid), quality=q)
     boxes = {t: (lambda tt, _t=t: tr.box_at(_t, tt)) for t in tr.tids}
-    return events_to_frame(events, camera_id, clip_id, boxes), events
+    vi = tr.meta.get("video_info") or {}
+    wh = (int(vi["width"]), int(vi["height"])) if vi.get("width") and vi.get("height") else None
+    return events_to_frame(events, camera_id, clip_id, boxes, wh), events
 
 
 def stage_events(tr: Tracks, series: pd.DataFrame, cycles: pd.DataFrame, cfg: dict, rd: Path, camera_id: str, clip_id: str,
