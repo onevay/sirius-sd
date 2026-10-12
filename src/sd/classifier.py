@@ -23,9 +23,9 @@ from sklearn.model_selection import StratifiedGroupKFold
 from . import bundle as B
 from . import cycle_models as CM
 from .feature_auc import _auc
-from .paths import ROOT
+from .paths import CLASSIFIER_SPECS
 
-DIR = ROOT / "configs" / "classifiers"
+DIR = CLASSIFIER_SPECS
 KINDS = {"logreg": "логистическая регрессия (C — обратная сила регуляризации)", "lgbm": "LightGBM (деревья малой глубины)", "mlp": "MLP (один скрытый слой)"}
 PARAMS = {   # допустимые гиперпараметры и значения по умолчанию (для интерфейса; неизвестные ключи fit_member молча передаёт LightGBM — проверяем здесь)
     "logreg": {"C": 0.3},
@@ -201,7 +201,9 @@ def diagnose(tab: pd.DataFrame, spec: dict, n_perm: int = 5, curve: Sequence[flo
 
 
 def train(tab: pd.DataFrame, spec: dict, out_dir: Path, meta: dict | None = None) -> dict:
-    """Обучает и сохраняет пакет по спецификации (без pickle). Возвращает manifest."""
+    """Обучает и сохраняет пакет по спецификации (без pickle). Возвращает manifest. В манифест попадают спецификация, источник таблицы (прогон оценки, отпечаток меток)
+    и список видео обучения (по нему `sd eval` предупреждает об оценке на обучающих клипах)."""
+    source = dict(tab.attrs.get("source") or {})
     t, y = _prepare(tab)
     problems = validate(spec, t)
     if problems:
@@ -209,7 +211,8 @@ def train(tab: pd.DataFrame, spec: dict, out_dir: Path, meta: dict | None = None
     cv = {**DEFAULT_CV, **(spec.get("cv") or {})}
     groups = _groups(t, bool(cv["by_scene"]))
     mem = {n: dict(kind=m["kind"], features=list(m["features"]), params=dict(m.get("params") or {})) for n, m in spec["members"].items()}
-    info = dict(spec={k: spec.get(k) for k in ("name", "description", "set")}, features_requested=spec_features(spec), by_scene=bool(cv["by_scene"]), **(meta or {}))
+    info = dict(spec={k: spec.get(k) for k in ("name", "description", "set")}, spec_full=spec, features_requested=spec_features(spec), by_scene=bool(cv["by_scene"]),
+                table_source=source or None, **(meta or {}))
     return B.train_bundle(t, y, groups, mem, out_dir, meta=info, n_splits=int(cv["n_splits"]), repeats=int(cv["repeats"]), seed=int(cv["seed"]), calibrate=bool(spec.get("calibrate", False)))
 
 
@@ -238,12 +241,61 @@ def list_specs(directory: Path | None = None) -> list[str]:
     return sorted(f.stem for f in d.glob("*.yaml")) if d.exists() else []
 
 
-def load_table(enriched: bool = True) -> pd.DataFrame:
-    """Таблица всех циклов полных запусков с метками жестов и (если `enriched`) признаками `sd enrich` — то же, что получает `sd train-bundle --enriched`."""
+def load_table(enriched: bool = True, run: str | None = None, runs_like: str | None = None) -> pd.DataFrame:
+    """Таблица циклов с метками жестов и (если `enriched`) признаками `sd enrich`.
+
+    `run` — id прогона оценки: циклы РОВНО тех запусков, по которым он считался (рекомендуется: одна конфигурация, воспроизводимо). Без него — последний полный запуск
+    каждого клипа (как раньше; смешивает конфигурации, если их запускали вперемешку). Источник и отпечаток меток лежат в `tab.attrs['source']` — они попадают
+    в манифест пакета и в результаты диагностики."""
     from . import enrich as EN
+    from . import labels_history as LH
     from . import oof_eval as O
     from . import start_eval as SE
 
-    clips = O.collect()
+    clips = O.collect(runs_like=runs_like or None, from_run=run or None)
+    if not clips:
+        raise ValueError("нет готовых запусков распознавания по полным клипам: запустите оценку (вкладка «Валидация») или `sd recognize`")
     tab = O.attach_labels(clips, pd.read_csv(SE.GT_CSV, encoding="utf-8-sig"))
-    return EN.attach(tab, list(clips)) if enriched else tab
+    tab = EN.attach(tab, list(clips)) if enriched else tab
+    tab.attrs["source"] = dict(run=run or None, runs_like=runs_like or None, enriched=bool(enriched), clips=len(clips), gestures=Path(SE.GT_CSV).name,
+                               gestures_sha=LH.content_sha(Path(SE.GT_CSV)))
+    return tab
+
+
+def warnings_for(tab: pd.DataFrame, spec: dict, diag: dict | None = None) -> list[tuple[str, str]]:
+    """Предупреждения перед обучением/выпуском: (уровень error|warning|info, текст). Ловят типичные ошибки: мало данных, утечка между фолдами, один значимый признак,
+    признаки, которых не будет в живом потоке, неизвестные колонки."""
+    from .solver import feature_groups
+
+    out: list[tuple[str, str]] = []
+    lab = tab[tab.y.notna()] if "y" in tab else tab
+    n_pos, n_neg = int((lab.y == 1).sum()) if len(lab) else 0, int((lab.y == 0).sum()) if len(lab) else 0
+    for p in validate(spec, tab):
+        out.append(("error", p))
+    if n_pos < 30 or n_neg < 30:
+        out.append(("error", f"слишком мало размеченных циклов: затяжек {n_pos}, не затяжек {n_neg} (нужно ≥ 30 каждого) — разметьте жесты"))
+    elif n_pos < 100:
+        out.append(("warning", f"затяжек {n_pos} (< 100): интервал AUC широк, сравнение моделей ненадёжно — различие меньше 0.03 считайте шумом"))
+    feats = spec_features(spec)
+    if len(lab):
+        empty = [c for c in feats if c in lab and lab[c].notna().mean() < 0.5]
+        if empty:
+            out.append(("warning", f"признаки заполнены меньше чем на половине циклов: {', '.join(empty)} (выполните «Признаки» для этого источника таблицы)"))
+    groups = feature_groups(feats)
+    heavy = [g for g in ("vlm", "tube") if groups.get(g)]
+    if heavy:
+        out.append(("warning", f"признаки групп {', '.join(heavy)} дороги (секунды на цикл) и недоступны в живом потоке: годится только для офлайн-разбора"))
+    if groups.get("photo") or groups.get("object"):
+        out.append(("info", "признаки предмета и фото в живом потоке требуют кадров цикла (кропы рта); проверьте режим «Поток» на вкладке «Валидация»"))
+    if diag:
+        ens = diag["members"][diag["members"].член == "ансамбль"].iloc[0]
+        if ens.разрыв > 0.1:
+            out.append(("warning", f"разрыв train−oof {ens.разрыв:.2f} > 0.10: модель запоминает данные"))
+        if diag.get("perm_auc") and diag.get("perm_mean", 0) > 0.58:
+            out.append(("error", f"AUC при перемешанных метках {diag['perm_mean']:.2f}: утечка между фолдами — включите фолды по сценам"))
+        imp = diag.get("importance")
+        if imp is not None and len(imp) >= 2:
+            sig = imp[imp.падение_AUC > 0.01]
+            if len(sig) <= 1:
+                out.append(("warning", f"значим только {'один признак' if len(sig) == 1 else 'ни один признак'} ({', '.join(sig.признак) or '—'}): модель хрупкая к смене детектора и ракурса"))
+    return out

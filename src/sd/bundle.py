@@ -15,6 +15,7 @@ from . import _env  # noqa: F401
 import json
 import time
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -125,12 +126,44 @@ def train_bundle(X: pd.DataFrame, y: np.ndarray, groups: np.ndarray, spec: dict[
     manifest = dict(kind="cycle_classifier", format=FORMAT, created=time.strftime("%Y-%m-%d %H:%M:%S"), features=feats,
                     members={n: dict(kind=m["kind"], features=m["features"], **({"file": m["file"]} if "file" in m else {})) for n, m in members.items()},
                     calibrated=bool(calibrate), n=int(len(y)), n_pos=int(y.sum()), n_groups=int(len(set(groups))),
+                    videos=sorted({str(v) for v in X["video"]}) if "video" in X else None,      # видео обучения: оценка на них оптимистична (проверка утечки в sd eval)
                     cv=dict(n_splits=n_splits, repeats=repeats, auc_members={n: round(_auc(y, oof[n]), 4) for n in spec}, auc_ensemble=round(_auc(y, ens), 4),
                             auc_ensemble_calibrated=round(_auc(y, iso.predict(ens)), 4) if iso is not None else None),
                     **(meta or {}))
     (out_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     pd.DataFrame({"y": y, "group": groups, **{f"oof_{n}": v for n, v in oof.items()}, "oof_ensemble": ens}).to_csv(out_dir / "oof.csv", index=False)
     return manifest
+
+
+def training_videos(path: str | Path) -> tuple[set[str], str]:
+    """Видео, на которых обучен пакет, и как это установлено: ('manifest' — список в manifest.json; 'oof' — группы из oof.csv, если фолды шли по видео;
+    'scene' — группы были сценами, точного списка нет; 'unknown' — нет данных)."""
+    p = Path(path)
+    try:
+        man = json.loads((p / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set(), "unknown"
+    if man.get("videos"):
+        return set(man["videos"]), "manifest"
+    f = p / "oof.csv"
+    if f.exists():
+        g = set(pd.read_csv(f, usecols=["group"]).group.astype(str))
+        if man.get("by_scene"):
+            return g, "scene"
+        return g, "oof"
+    return set(), "unknown"
+
+
+def leak(path: str | Path, clip_ids: Sequence[str]) -> dict:
+    """Пересечение клипов оценки с видео обучения пакета: {'clips': [...], 'source': ..., 'n_train': N}. Пакет, обученный на клипах оценки, даёт оптимистичную цифру."""
+    from .oof_eval import scene_group
+
+    vids, src = training_videos(path)
+    if src == "scene":
+        hit = [c for c in clip_ids if scene_group(c) in vids or c in vids]
+    else:
+        hit = [c for c in clip_ids if c in vids]
+    return dict(clips=sorted(hit), source=src, n_train=len(vids))
 
 
 class Bundle:

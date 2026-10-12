@@ -158,6 +158,20 @@ def with_classifier(profile: Profile, classifier: str | Path | None) -> Profile:
     return Profile(profile.name, profile.description, profile.base, dict(profile.config), {**profile.options, "cycle_bundle": str(classifier)})
 
 
+def training_leak(profile: Profile, clip_ids: Sequence[str]) -> dict:
+    """Какие из оцениваемых клипов были в обучении классификатора цикла профиля (см. `bundle.leak`). Ошибка чтения пакета → пустой результат с причиной."""
+    from . import bundle as B
+    from .paths import repo_path
+
+    spec = profile.opts().get("cycle_bundle")
+    if not spec:
+        return dict(clips=[], source="unknown", n_train=0)
+    try:
+        return B.leak(repo_path(spec), list(clip_ids))
+    except Exception as e:          # noqa: BLE001 — проверка не должна мешать оценке
+        return dict(clips=[], source=f"ошибка: {e}", n_train=0)
+
+
 def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, classifier: str | Path | None = None, mode: str = "events", role: str = "validation", policy: str = "plateau", target_f1: float = 0.80,
                   only_labeled: bool = True, window: tuple[float, float | None] = (0.0, None), max_sec: float | None = None, roi_path: str | Path | None = None,
                   use_cache: bool = True, name: str | None = None, save: bool = True, gt_df: pd.DataFrame | None = None, n_boot: int = 300,
@@ -176,6 +190,7 @@ def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, classifier: s
         raise ValueError("role ∈ {validation, hidden}")
     if role == "hidden" and policy != "fixed":
         raise ValueError("на скрытом наборе порог фиксируется заранее (policy='fixed'): подбирать его по скрытым меткам запрещено")
+    dirs = [from_portable(d) if str(d).startswith("$") else d for d in dirs]      # «$DATA/курение» из журнала или интерфейса — как обычный путь
     videos = LIB.videos_in(dirs)
     if clips:          # точечная оценка: только клипы, id которых содержит одну из подстрок (быстрая проверка гипотезы без прогона всей папки)
         want = [c.strip() for c in clips if c.strip()]
@@ -205,6 +220,12 @@ def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, classifier: s
         videos = keep
         if not videos or len({weak_label(v) for v in videos}) < 2:
             raise ValueError("для слабой оценки нужны клипы обоих классов («курение» и без курения) в выбранных папках")
+    leak = training_leak(profile, [video_id(v) for v in videos])
+    if leak["clips"]:
+        if role == "hidden":
+            raise ValueError(f"классификатор обучен на {len(leak['clips'])} клипах «скрытого» набора ({', '.join(leak['clips'][:5])}…): такая оценка недействительна — "
+                             "выберите другой пакет или набор")
+        notes.append(f"классификатор цикла обучен на {len(leak['clips'])} из {len(videos)} оцениваемых клипов: цифра оптимистична (честная — вложенная oof-оценка, вкладка «Задачи → Результаты»)")
     zones = ROI.load(roi_path) if roi_path else None
     prof = profile
     st = settings or EV.Settings(threshold=prof.threshold, target_f1=target_f1)
@@ -240,7 +261,7 @@ def evaluate_dirs(dirs: Sequence[str | Path], profile: Profile, *, classifier: s
                 dirs=[str(d) for d in dirs], clips=[dict(clip_id=r.clip_id, path=portable(r.video), duration=r.duration, window=list(r.window), cached=r.cached, seconds=r.seconds,
                                                          run_dir=r.run_dir, out_dir=r.out_dir, error=r.error, cycles=r.cycles, people=r.people) for r in runs],
                 skipped_unlabeled=skipped, gt_fingerprint=GT.fingerprint(gt_all, set(durations)) if mode == "events" else None, gt_rows=int(len(gt_used)),
-                roi=str(roi_path) if roi_path else None, max_sec=max_sec, target_f1=target_f1, total_seconds=round(sum(r.seconds for r in runs), 1))
+                leak=leak, host=XP.host_info(), roi=str(roi_path) if roi_path else None, max_sec=max_sec, target_f1=target_f1, total_seconds=round(sum(r.seconds for r in runs), 1))
     rid = None
     if save:
         rid = XP.save_run(rep, meta, events_all, gt_used, root=exp_root).name

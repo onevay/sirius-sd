@@ -48,15 +48,27 @@
       "port": 8502
     },
     {
-      "name": "operator-app",
+      "name": "operator-web",
       "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "sd",
+        "app",
+        "--port",
+        "8503"
+      ],
+      "port": 8503
+    },
+    {
+      "name": "dev-studio-8504",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": [
         "-m",
         "streamlit",
         "run",
-        "src/sd/ui/user_app.py",
+        "src/sd/ui/app.py",
         "--server.port",
-        "8503",
+        "8504",
         "--server.address",
         "127.0.0.1",
         "--server.headless",
@@ -66,7 +78,7 @@
         "--browser.gatherUsageStats",
         "false"
       ],
-      "port": 8503
+      "port": 8504
     }
   ]
 }

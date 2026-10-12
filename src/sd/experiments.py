@@ -36,6 +36,27 @@ def git_state() -> dict:
         return dict(commit=None, dirty=None)
 
 
+def host_info() -> dict:
+    """Лёгкая сводка машины для журнала прогона (без импорта torch/openvino): ОС, процессор, потоки, ОЗУ. Скорость в отчёте относится к этой машине."""
+    import os
+    import platform
+
+    info = dict(os=platform.platform(), cpu=platform.processor() or None, threads=os.cpu_count(), python=platform.python_version())
+    try:
+        from .hw import _cpu_name
+
+        info["cpu"] = _cpu_name() or info["cpu"]
+    except Exception:           # noqa: BLE001
+        pass
+    try:
+        import psutil
+
+        info["ram_gb"] = round(psutil.virtual_memory().total / 2**30, 1)
+    except Exception:           # noqa: BLE001
+        pass
+    return info
+
+
 def new_id(name: str) -> str:
     return f"{time.strftime('%Y%m%d_%H%M%S')}_{slug(name) or 'run'}"
 
