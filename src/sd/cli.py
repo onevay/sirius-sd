@@ -20,7 +20,7 @@ from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, Ti
 from rich.table import Table
 
 from .config import load_config
-from .paths import OUTPUTS, ROOT, list_videos, resolve_video, video_id, weak_label
+from .paths import ANALYSIS_IMG, CYCLE_MODELS, OUTPUTS, REVIEW, ROOT, list_videos, resolve_video, video_id, weak_label
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, rich_markup_mode="markdown",
                   help="**smoking-detection** — детекция курения по видео: поза+трекинг → циклы жеста → события по регламенту.")
@@ -33,6 +33,9 @@ from .cli_solver import solver_app  # noqa: E402
 
 app.add_typer(photos_app, name="photos")
 app.add_typer(solver_app, name="solver")
+from .cli_dev import register as _register_dev  # noqa: E402
+
+_register_dev(app)            # отчёт, clf, release, variants, labels — команды Dev Studio (src/sd/cli_dev.py)
 import shutil as _shutil
 
 # при перенаправлении вывода rich берёт ширину 80 и ломает таблицы — задаём разумный минимум
@@ -172,7 +175,7 @@ def eda(every_sec: Annotated[float, typer.Option(help="Шаг выборки к�
         root: Annotated[Optional[Path], typer.Option(help="Папка с видео (по умолчанию data/)")] = None,
         only: Annotated[Optional[list[str]], typer.Option(help="Только эти видео (имя/stem)")] = None,
         out: Annotated[Path, typer.Option(help="Куда писать таблицы")] = OUTPUTS / "analysis",
-        img_dir: Annotated[Path, typer.Option(help="Куда писать графики")] = ROOT / "docs" / "img",
+        img_dir: Annotated[Path, typer.Option(help="Куда писать графики")] = ANALYSIS_IMG,
         save_frames: Annotated[bool, typer.Option(help="Сохранить до 3 кадров с людьми на видео (набор для бенчмарков)")] = True) -> None:
     from . import eda as E
 
@@ -527,7 +530,7 @@ def bench_pose_cmd(preset: Annotated[str, typer.Option(help="quick (torch+openvi
     parts = [pd.read_csv(f) for f in sorted(a.glob("bench_pose*.csv")) if f.name != "bench_pose_all.csv"]
     df = pd.concat(parts, ignore_index=True).drop_duplicates(subset=["name", "scale"], keep="last")
     df.to_csv(a / "bench_pose_all.csv", index=False)
-    B.plot_pose_bench(df, ROOT / "docs" / "img" / "bench_pose.png")
+    B.plot_pose_bench(df, ANALYSIS_IMG / "bench_pose.png")
     cols = ["name", "scale", "fps", "person_recall", "extra_per_frame", "wrist_ok35", "wrist_err_med", "nose_err_med", "wrist_conf_mean", "error"]
     console.print(df[[c for c in cols if c in df.columns]].to_string(index=False))
     console.print(f"{out_csv}\n{a / 'bench_pose_all.csv'}\n{ROOT / 'docs' / 'img' / 'bench_pose.png'}")
@@ -574,7 +577,7 @@ def calibrate(th_in: Annotated[str, typer.Option(help="значения th_in ч
         agg = ev.groupby(["target", "th_in", "th_out", "k"]).agg(интервалов=("intervals", "sum"), найдено=("hit", "sum"), циклов=("cycles", "sum"),
                                                                   циклов_вне=("cycles_outside", "sum")).reset_index()
         agg["recall"] = (agg["найдено"] / agg["интервалов"]).round(2)
-        console.print("против визуальных интервалов (docs/review/visual_intervals.csv):")
+        console.print("против визуальных интервалов (labels/review/visual_intervals.csv):")
         console.print(agg.to_string(index=False))
 
 
@@ -678,7 +681,7 @@ def train(use_weak: Annotated[bool, typer.Option(help="Слабые метки �
           labels: Annotated[Optional[Path], typer.Option(help="CSV меток: формат проекта (labels/cycle_labels.csv) или визуальный (video,tid,start,label); по умолчанию labels/cycle_labels.csv")] = None,
           models: Annotated[bool, typer.Option("--models/--no-models", help="присоединить признаки D/E из outputs/analysis (предмет, X-CLIP, VideoMAE)")] = False,
           vlm: Annotated[Optional[Path], typer.Option(help="parquet результата `sd vlm-eval` — добавить признаки группы G (оценка VLM)")] = None,
-          out: Annotated[Path, typer.Option()] = ROOT / "models" / "cycle") -> None:
+          out: Annotated[Path, typer.Option()] = CYCLE_MODELS) -> None:
     import pandas as pd
 
     from . import dataset as D
@@ -807,7 +810,7 @@ def vlm_eval_cmd(backend: Annotated[str, typer.Option(help="ollama | transformer
                  model: Annotated[str, typer.Option(help="тег модели Ollama, например qwen3.5:2b-q4_K_M")] = "qwen3.5:2b-q4_K_M",
                  repo: Annotated[str, typer.Option(help="HF-репозиторий для transformers")] = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
                  base_url: Annotated[Optional[str], typer.Option(help="URL сервера (по умолчанию Ollama: http://127.0.0.1:11434)")] = None,
-                 labels: Annotated[Path, typer.Option(help="CSV меток циклов")] = ROOT / "docs" / "review" / "assistant_visual_labels.csv",
+                 labels: Annotated[Path, typer.Option(help="CSV меток циклов")] = REVIEW / "assistant_visual_labels.csv",
                  modes: Annotated[str, typer.Option(help="Ollama: режимы через запятую (yesno, letter, json); каждый режим на окне стоит полный prefill (кэш между разными вопросами не работает); letter не лучше yesno")] = "yesno",
                  frames: Annotated[int, typer.Option(help="кадров на окно")] = 6, size: Annotated[int, typer.Option(help="сторона кадра, px (кропы «трубки» нативно 224)")] = 224,
                  window: Annotated[float, typer.Option(help="длина окна вокруг пика цикла, с")] = 2.5,
@@ -894,7 +897,7 @@ def clips_run(root: Annotated[Path, typer.Argument(help="папка вида <ro
 
 
 @app.command("fetch-videos", help="Скачать выборку открытых видео БЕЗ входа в аккаунт в data_external/<источник>/<набор>/<класс>/клип.mp4 (формат `sd clips-run`). Пока hmdb51: зеркало Hugging Face divm/hmdb51, "
-                                  "по умолчанию классы smoke, drink, eat, chew, talk, smile (≈ 83 МБ целиком). Kinetics/AVA/CDAD — вручную, см. docs/NEXT_STEPS.md.")
+                                  "по умолчанию классы smoke, drink, eat, chew, talk, smile (≈ 83 МБ целиком). Kinetics/AVA/CDAD — вручную (см. docs/DATA_AND_WEIGHTS.md).")
 def fetch_videos_cmd(name: Annotated[str, typer.Argument(help="hmdb51")] = "hmdb51",
                      classes: Annotated[Optional[str], typer.Option(help="классы через запятую (имена HMDB51: smoke, drink, eat, chew, talk, smile, laugh, kiss, pour…)")] = None,
                      per_class: Annotated[Optional[int], typer.Option(help="не больше N клипов на класс (детерминированная выборка)")] = None) -> None:
@@ -909,7 +912,7 @@ def fetch_videos_cmd(name: Annotated[str, typer.Argument(help="hmdb51")] = "hmdb
 
 
 @app.command("event-check", help="Сквозная проверка «циклы → оценка цикла → события → протокол оценки» на текущих данных по эталону из визуальных меток (механика и порядок величин, не качество).")
-def event_check_cmd(labels: Annotated[Path, typer.Option(help="CSV меток циклов (эталон строится из них)")] = ROOT / "docs" / "review" / "assistant_visual_labels.csv",
+def event_check_cmd(labels: Annotated[Path, typer.Option(help="CSV меток циклов (эталон строится из них)")] = REVIEW / "assistant_visual_labels.csv",
                     vlm: Annotated[Optional[Path], typer.Option(help="parquet из `sd vlm-eval`: добавить оценку VLM к признакам модели")] = None) -> None:
     from . import event_check as EC
 
@@ -1014,7 +1017,7 @@ def doctor_cmd(json_out: Annotated[Optional[Path], typer.Option("--json", help="
 
 @app.command("recognize", help="Полный цикл распознавания: видео → поза+трекинг → циклы → признаки → оценка цикла (пакеты моделей) → события по регламенту. Пишет outputs/recognize/<видео>/<окно>_<время>/ (result.json, cycles_scored.csv, events.csv/json, overlay.mp4).")
 def recognize_cmd(video: VideoArg, start: Start = 0.0, end: End = None,
-                  cycle_bundle: Annotated[Optional[Path], typer.Option(help="пакет классификатора цикла (models/cycle/<имя>); без него — эвристика-заглушка")] = None,
+                  cycle_bundle: Annotated[Optional[Path], typer.Option(help="пакет классификатора цикла (models/cycle/<имя>); ОБЯЗАТЕЛЕН — без него распознавание не запускается")] = None,
                   cycle_bundle_full: Annotated[Optional[Path], typer.Option(help="пакет с VLM-признаком (для --vlm-mode grey|all)")] = None,
                   photo_bundle: Annotated[Optional[Path], typer.Option(help="пакет фото-модели (models/photo/<имя>), даёт признаки photo_*")] = None,
                   objects: Annotated[Optional[str], typer.Option(help="детекторы предмета через запятую (smoking_yolo11m_beehzod,…)")] = None,
@@ -1026,6 +1029,9 @@ def recognize_cmd(video: VideoArg, start: Start = 0.0, end: End = None,
                   camera_id: str = "cam_local", set_: SetOpt = None, config: CfgOpt = None, force_pose: Annotated[bool, typer.Option("--force-pose", help="пересчитать позу")] = False) -> None:
     from . import pipeline as P
 
+    if not cycle_bundle:      # раньше справка обещала «эвристику-заглушку», а конвейер падал с ClassifierRequired уже после загрузки видео
+        console.print("[red]нужен --cycle-bundle models/cycle/<имя> (классификатор цикла обязателен; список — `sd models list` или страница «Модели»)[/]")
+        raise typer.Exit(1)
     vid, cfg = _setup(video, start, end, set_, config)
     lo, hi = (float(x) for x in grey.split(","))
     opts = P.Options(cycle_bundle=str(cycle_bundle) if cycle_bundle else None, cycle_bundle_full=str(cycle_bundle_full) if cycle_bundle_full else None,
@@ -1088,8 +1094,8 @@ def analyze_cycles(what: Annotated[str, typer.Option(help="через запят
         console.print(f"photo: {len(ph)} циклов -> {OUTPUTS / 'analysis' / 'photo_cycles.parquet'}")
 
 
-@app.command("feature-auc", help="AUC признаков цикла (кинематика, предмет, X-CLIP, VideoMAE) на разметке глазами + грубая абляция групп; пишет outputs/analysis/feature_auc*.csv и docs/img/feature_auc.png.")
-def feature_auc(labels: Annotated[Path, typer.Option(help="CSV разметки циклов (video,tid,start,label)")] = ROOT / "docs" / "review" / "assistant_visual_labels.csv",
+@app.command("feature-auc", help="AUC признаков цикла (кинематика, предмет, X-CLIP, VideoMAE) на разметке глазами + грубая абляция групп; пишет outputs/analysis/feature_auc*.csv и outputs/analysis/img/feature_auc.png.")
+def feature_auc(labels: Annotated[Path, typer.Option(help="CSV разметки циклов (video,tid,start,label)")] = REVIEW / "assistant_visual_labels.csv",
                 n_boot: Annotated[int, typer.Option(help="бутстрэп-перевыборок (по видео)")] = 500,
                 top: Annotated[int, typer.Option(help="сколько признаков показать в таблице на группу")] = 8,
                 vlm: Annotated[Optional[Path], typer.Option(help="parquet из `sd vlm-eval`: добавить группу G (оценка VLM); таблица сузится до циклов, которые VLM обработал")] = None,
@@ -1139,7 +1145,7 @@ def feature_auc(labels: Annotated[Path, typer.Option(help="CSV разметки 
         ab.to_csv(OUTPUTS / "analysis" / f"feature_auc_ablation{sfx}.csv", index=False, encoding="utf-8-sig")
     info = (f"{len(tab)} циклов: {int(tab.y.sum())} курение / {int((1 - tab.y).sum())} не курение, {tab.video.nunique()} видео; метки — оценка ассистента по кадрам, не эталон; "
             f"негативы в основном из другой папки видео")
-    img = FA.plot_auc(res, ROOT / "docs" / "img" / f"feature_auc{sfx}.png", info=info)
+    img = FA.plot_auc(res, ANALYSIS_IMG / f"feature_auc{sfx}.png", info=info)
     tab.to_csv(OUTPUTS / "analysis" / f"feature_table_labelled{sfx}.csv", index=False, encoding="utf-8-sig")
     console.print(f"таблицы: {out}; график: {img}")
 
@@ -1200,9 +1206,9 @@ def detector_eval_cmd(detector: Annotated[str, typer.Argument(help="id из `sd 
 
 
 @app.command("start-eval", help="Качество детекции НАЧАЛА цикла (кандидатов-жестов): recall/precision генераторов (автомат при разных порогах и их объединения), точность старта, аудит случайных окон. "
-                                "Эталон — метки жестов глазами по пулу кандидатов (docs/review/gesture_gt.csv, не эталон организаторов). Пишет outputs/analysis/start_eval_*.csv и docs/img/start_eval.png.")
-def start_eval_cmd(gt: Annotated[Path, typer.Option(help="CSV меток жестов (video,tid,peak_t,label,start_quality)")] = ROOT / "docs" / "review" / "gesture_gt.csv",
-                   audit: Annotated[Path, typer.Option(help="CSV меток случайных окон вне кандидатов")] = ROOT / "docs" / "review" / "gesture_audit_windows.csv",
+                                "Эталон — метки жестов глазами по пулу кандидатов (labels/review/gesture_gt.csv, не эталон организаторов). Пишет outputs/analysis/start_eval_*.csv и outputs/analysis/img/start_eval.png.")
+def start_eval_cmd(gt: Annotated[Path, typer.Option(help="CSV меток жестов (video,tid,peak_t,label,start_quality)")] = REVIEW / "gesture_gt.csv",
+                   audit: Annotated[Path, typer.Option(help="CSV меток случайных окон вне кандидатов")] = REVIEW / "gesture_audit_windows.csv",
                    rebuild: Annotated[bool, typer.Option(help="пересобрать пул кандидатов по запускам (иначе берётся outputs/analysis/gesture_pool.parquet)")] = False,
                    montages: Annotated[Optional[Path], typer.Option(help="каталог для монтажей НЕразмеченных кандидатов (по 6 на картинку, 7 кадров каждый) + gesture_gt_todo.csv для заполнения меток")] = None,
                    n_boot: int = 500) -> None:
@@ -1245,7 +1251,7 @@ def start_eval_cmd(gt: Annotated[Path, typer.Option(help="CSV меток жес�
         lo, hi = SE.wilson(k, n)
         console.print(f"аудит случайных окон вне кандидатов: {len(a)} окон ({int((a.label == 'unsure').sum())} неясных), настоящих жестов пропущено {k} из {n} = {k / max(n, 1):.0%} [{lo:.0%}–{hi:.0%}] (Уилсон); "
                       f"затяжек среди пропущенных {int((a.label == 'smoke').sum())}")
-    img = SE.plot_generators(t[t.generator.isin(["main", "guide", "guide_k05", "lenient", "lenient_k05", "main+lenient_k05"])], ROOT / "docs" / "img" / "start_eval.png",
+    img = SE.plot_generators(t[t.generator.isin(["main", "guide", "guide_k05", "lenient", "lenient_k05", "main+lenient_k05"])], ANALYSIS_IMG / "start_eval.png",
                              f"{len(p)} кандидатов пула, из них размечено «жест/не жест» {int((p.label.notna() & (p.label != 'unsure')).sum())}; генераторы — пороги th_in/th_out и продление кисти k (SE.GENERATORS)")
     console.print(f"таблицы: {out / 'start_eval_generators.csv'}; график: {img}")
 
@@ -1277,7 +1283,7 @@ def pool_features_cmd(objects: Annotated[str, typer.Option(help="детекто�
 
 @app.command("smoke-cues", help="«Дым» как признак цикла: простые признаки «дымки» (падение резкости, контраста и насыщенности ПОСЛЕ затяжки) и CLIP zero-shot «виден дым» по кропам рта; AUC с интервалом по видео, "
                                 "проверка на смешение со сценой и вклад в набор `cheap`. Кропы — после `sd analyze-cycles --what photo`; пишет outputs/analysis/smoke_cycles.parquet и smoke_cues.csv.")
-def smoke_cues_cmd(labels: Annotated[Path, typer.Option(help="CSV меток циклов")] = ROOT / "docs" / "review" / "assistant_visual_labels.csv",
+def smoke_cues_cmd(labels: Annotated[Path, typer.Option(help="CSV меток циклов")] = REVIEW / "assistant_visual_labels.csv",
                    clip: Annotated[bool, typer.Option("--clip/--no-clip", help="CLIP zero-shot «виден дым» (один раз загружает текстовую башню через torch)")] = True,
                    repeats: int = 3, n_boot: int = 400) -> None:
     from . import cycle_models as CM
@@ -1318,11 +1324,12 @@ def smoke_cues_cmd(labels: Annotated[Path, typer.Option(help="CSV меток ц�
 def enrich_cmd(objects: Annotated[str, typer.Option(help="детекторы предмета через запятую; пусто — не считать")] = "smoking_yolo11m_beehzod,smoking_yolo26s_basant18",
                vlm: Annotated[str, typer.Option(help="тег Ollama (например qwen3.5:2b-q4_K_M); пусто — без VLM; сервер: sd.cmd ollama up --igpu")] = "",
                clips: Annotated[Optional[str], typer.Option(help="только эти клипы (video_id через запятую)")] = None,
-               photo_bundle: Annotated[Optional[Path], typer.Option(help="пакет фото-модели (models/photo/<имя>): признаки photo_* и zero-shot CLIP по кропам рта")] = None) -> None:
+               photo_bundle: Annotated[Optional[Path], typer.Option(help="пакет фото-модели (models/photo/<имя>): признаки photo_* и zero-shot CLIP по кропам рта")] = None,
+               run: Annotated[str, typer.Option(help="циклы запусков прогона оценки (id из журнала); пусто — последние запуски")] = "") -> None:
     from . import enrich as EN
     from . import oof_eval as O
 
-    cl = O.collect(videos=[c.strip() for c in clips.split(",")] if clips else None)
+    cl = O.collect(videos=[c.strip() for c in clips.split(",")] if clips else None, from_run=run or None)
     if not cl:
         console.print("[red]нет готовых запусков `sd recognize` (outputs/recognize/<клип>/0-end*/analysis)[/]")
         raise typer.Exit(1)
@@ -1334,7 +1341,7 @@ def enrich_cmd(objects: Annotated[str, typer.Option(help="детекторы п�
     console.print(f"каталог: {EN.ROOT}")
 
 
-@app.command("gt-from-gestures", help="Эталон событий (`labels/events_gt.csv`) из меток жестов `docs/review/gesture_gt.csv`: затяжки одного человека → эпизоды (POSITIVE), одиночные и неясные → IGNORE, "
+@app.command("gt-from-gestures", help="Эталон событий (`labels/events_gt.csv`) из меток жестов `labels/review/gesture_gt.csv`: затяжки одного человека → эпизоды (POSITIVE), одиночные и неясные → IGNORE, "
                                       "папка без курения → «весь клип без курения». Строки разметчика `assistant` по этим клипам заменяются, ваши — нет. Нужны готовые запуски (`sd recognize`/`sd eval`).")
 def gt_from_gestures_cmd(labeler: Annotated[str, typer.Option(help="имя разметчика в файле эталона")] = "assistant") -> None:
     import pandas as pd
@@ -1363,6 +1370,11 @@ def gt_from_gestures_cmd(labeler: Annotated[str, typer.Option(help="имя ра�
             cache[v] = Tracks.load(clips[v].run_dir / "pose")
         return cache[v].box_at(int(tid), t)
 
+    from . import labels_history as LH
+
+    snap = LH.snapshot("events", labeler, "перед перестройкой эталона из меток жестов", "rebuild", force=False)
+    if snap:
+        console.print(f"прежний эталон сохранён версией: labels/history/{snap['snapshot']}")
     r = GP.rebuild_gt(pool, dur, box_at, labeler=labeler)
     df = GT.load()
     console.print(r)
@@ -1376,7 +1388,8 @@ def oof_eval_cmd(sets: Annotated[str, typer.Option(help="наборы призн
                  kinds: Annotated[str, typer.Option(help="члены ансамбля: lr, gb, nn")] = "lr,gb", repeats: int = 3, nested_seeds: int = 3,
                  by_scene: Annotated[bool, typer.Option("--by-scene", help="фолды по СЦЕНАМ (клипы одной камеры/человека вместе: noyabrsk, Jar, 2025_11_06_*, распитие), а не по клипам — строже")] = False,
                  tag: Annotated[str, typer.Option(help="суффикс файла результата oof_study<tag>.csv")] = "",
-                 runs: Annotated[str, typer.Option(help="только запуски, в имени позы которых есть эта подстрока (напр. `_10fps`, `5fps`): признаки одной конфигурации")] = "") -> None:
+                 runs: Annotated[str, typer.Option(help="только запуски, в имени позы которых есть эта подстрока (напр. `_10fps`, `5fps`): признаки одной конфигурации")] = "",
+                 run: Annotated[str, typer.Option(help="циклы запусков прогона оценки (id из журнала) — воспроизводимо; главнее --runs")] = "") -> None:
     import numpy as np
     import pandas as pd
 
@@ -1387,7 +1400,7 @@ def oof_eval_cmd(sets: Annotated[str, typer.Option(help="наборы призн
     from .paths import list_videos, video_id
     from .video_io import probe
 
-    clips = O.collect(runs_like=runs or None)
+    clips = O.collect(runs_like=runs or None, from_run=run or None)
     if not clips:
         console.print("[red]нет готовых запусков `sd recognize` по полным видео[/]")
         raise typer.Exit(1)
@@ -1461,11 +1474,11 @@ DEFAULT_VLM_PARQUET = OUTPUTS / "analysis" / "vlm_qwen3.5_2b-q4_K_M_f6_s224_mout
 
 
 @app.command("compare-sets", help="Сравнение наборов признаков и ансамблей для классификатора цикла (логрегрессия / LightGBM / MLP и их среднее), фолды по видео, повторные перемешивания. Пишет outputs/analysis/compare_sets.csv.")
-def compare_sets_cmd(labels: Annotated[Path, typer.Option(help="CSV меток циклов")] = ROOT / "docs" / "review" / "assistant_visual_labels.csv",
+def compare_sets_cmd(labels: Annotated[Path, typer.Option(help="CSV меток циклов")] = REVIEW / "assistant_visual_labels.csv",
                      vlm: Annotated[Optional[Path], typer.Option(help="parquet из `sd vlm-eval` (VLM-признак); по умолчанию — полный прогон 2B, если он есть")] = None,
                      repeats: int = 5, sets: Annotated[Optional[str], typer.Option(help="наборы через запятую (по умолчанию все)")] = None,
                      tag: Annotated[Optional[str], typer.Option(help="суффикс имени файла")] = None,
-                     pool: Annotated[bool, typer.Option("--pool", help="таблица ВСЕХ кандидатов пула (160 жестов от нескольких генераторов, метки docs/review/gesture_gt.csv; «неясно» исключены): `sd pool-features` должен быть выполнен")] = False) -> None:
+                     pool: Annotated[bool, typer.Option("--pool", help="таблица ВСЕХ кандидатов пула (160 жестов от нескольких генераторов, метки labels/review/gesture_gt.csv; «неясно» исключены): `sd pool-features` должен быть выполнен")] = False) -> None:
     import pandas as pd
 
     from . import cycle_models as CM
@@ -1498,7 +1511,7 @@ def compare_sets_cmd(labels: Annotated[Path, typer.Option(help="CSV меток �
 @app.command("train-bundle", help="Обучить пакет классификатора цикла БЕЗ pickle (ансамбль: логрегрессии + LightGBM + MLP; калибровка по out-of-fold) в models/cycle/<имя>/ с manifest.json.")
 def train_bundle_cmd(name: Annotated[str, typer.Argument(help="имя пакета: models/cycle/<имя>/")] = "cycle_v1",
                      feature_set: Annotated[str, typer.Option("--set", help="набор признаков: kin | kin+rhythm | kin+pose | kin+obj | cheap | cheap+photo | cheap+video | cheap+vlm | full")] = "cheap",
-                     labels: Annotated[Path, typer.Option(help="CSV меток циклов")] = ROOT / "docs" / "review" / "assistant_visual_labels.csv",
+                     labels: Annotated[Path, typer.Option(help="CSV меток циклов")] = REVIEW / "assistant_visual_labels.csv",
                      vlm: Annotated[Optional[Path], typer.Option(help="parquet VLM (обязателен для наборов с vlm)")] = None, repeats: int = 5,
                      pool: Annotated[bool, typer.Option("--pool", help="обучать на ВСЕХ кандидатах пула (≈ 130 с метками, включая «нет жеста»): для широкого генератора кандидатов; VLM/видео-признаков в пуле нет")] = False,
                      enriched: Annotated[bool, typer.Option("--enriched", help="циклы ПОЛНЫХ запусков `sd recognize` + метки жестов + признаки `sd enrich` (предмет, фото/zero-shot, VLM): набор `obj_hold_zsd` и др.")] = False,
@@ -1541,8 +1554,8 @@ def train_bundle_cmd(name: Annotated[str, typer.Argument(help="имя пакет
     tab = tab.reset_index(drop=True)
     meta = dict(labels=str(labels.relative_to(ROOT)) if labels.is_relative_to(ROOT) else str(labels), label_source="assistant_visual (суждения по кадрам, не эталон)" if ("assistant" in labels.name or "gesture_gt" in labels.name) else "ручные",
                 candidates="циклы рабочего автомата полных запусков + метки жестов пула" if enriched else ("пул (несколько генераторов, включая «нет жеста»)" if pool else "рабочий автомат (th_in 0.65 / th_out 0.90)"), vlm=vlm.name if (vlm and "vlm" in feature_set) else None, note="пакет собран для проверки механики и сравнения наборов; метрики — OOF по видео на малой выборке, не итоговое качество")
-    man = CM.train(tab, feature_set, ROOT / "models" / "cycle" / name, meta, repeats, calibrate=calibrate, kinds=tuple(k.strip() for k in kinds.split(",") if k.strip()))
-    console.print(f"пакет: {ROOT / 'models' / 'cycle' / name}; циклов {man['n']} (курение {man['n_pos']}), видео {man['n_groups']}, признаков {len(man['features'])}")
+    man = CM.train(tab, feature_set, CYCLE_MODELS / name, meta, repeats, calibrate=calibrate, kinds=tuple(k.strip() for k in kinds.split(",") if k.strip()))
+    console.print(f"пакет: {CYCLE_MODELS / name}; циклов {man['n']} (курение {man['n_pos']}), видео {man['n_groups']}, признаков {len(man['features'])}")
     console.print(f"AUC out-of-fold: члены {man['cv']['auc_members']}, ансамбль {man['cv']['auc_ensemble']}, после калибровки {man['cv']['auc_ensemble_calibrated']}")
 
 

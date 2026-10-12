@@ -23,7 +23,8 @@ from .paths import OUTPUTS, ROOT, slug
 
 EXP_DIR = OUTPUTS / "experiments"
 INDEX_COLUMNS = ["id", "created", "name", "mode", "role", "clips", "f1", "ci_lo", "ci_hi", "precision", "recall", "tp", "fp", "fn", "fp_per_hour", "threshold", "target_f1", "reached",
-                 "dirs", "failed", "pose", "cycle_model", "vlm"]
+                 "dirs", "failed", "pose", "cycle_model", "vlm", "fps", "imgsz", "fingerprint", "gt_fingerprint", "tag", "note", "pinned"]
+NOTES = "notes.json"          # пометки разработчика к прогону: «подход» (тег), заметка, закреплён ли — не влияют на метрики, только на анализ
 
 
 def git_state() -> dict:
@@ -34,6 +35,27 @@ def git_state() -> dict:
         return dict(commit=run("rev-parse", "--short", "HEAD") or None, dirty=bool(run("status", "--porcelain", "--untracked-files=no")))
     except Exception:
         return dict(commit=None, dirty=None)
+
+
+def host_info() -> dict:
+    """Лёгкая сводка машины для журнала прогона (без импорта torch/openvino): ОС, процессор, потоки, ОЗУ. Скорость в отчёте относится к этой машине."""
+    import os
+    import platform
+
+    info = dict(os=platform.platform(), cpu=platform.processor() or None, threads=os.cpu_count(), python=platform.python_version())
+    try:
+        from .hw import _cpu_name
+
+        info["cpu"] = _cpu_name() or info["cpu"]
+    except Exception:           # noqa: BLE001
+        pass
+    try:
+        import psutil
+
+        info["ram_gb"] = round(psutil.virtual_memory().total / 2**30, 1)
+    except Exception:           # noqa: BLE001
+        pass
+    return info
 
 
 def new_id(name: str) -> str:
@@ -73,12 +95,34 @@ def list_runs(root: Path | None = None) -> pd.DataFrame:
         mt, ci, bd = r["metrics"], r.get("ci", {}), r.get("budget", {})
         d = m.get("describe", {})
         f1ci = ci.get("f1") or [None, None]
+        nt = read_notes(m["id"], base)
         rows.append(dict(id=m["id"], created=m.get("created"), name=m.get("name"), mode=r.get("mode"), role=m.get("role"), clips=mt.get("clips"), f1=mt.get("f1"), ci_lo=f1ci[0], ci_hi=f1ci[1],
                          precision=mt.get("precision"), recall=mt.get("recall"), tp=mt.get("tp"), fp=mt.get("fp"), fn=mt.get("fn"), fp_per_hour=mt.get("fp_per_hour"),
                          threshold=mt.get("threshold"), target_f1=bd.get("target"), reached=bd.get("reached"), dirs=", ".join(Path(x).name for x in m.get("dirs", [])),
-                         failed=sum(1 for c in m.get("clips", []) if c.get("error")), pose=d.get("pose"), cycle_model=d.get("cycle_model"), vlm=d.get("vlm")))
+                         failed=sum(1 for c in m.get("clips", []) if c.get("error")), pose=d.get("pose"), cycle_model=d.get("cycle_model"), vlm=d.get("vlm"),
+                         fps=d.get("fps"), imgsz=d.get("imgsz"), fingerprint=m.get("fingerprint"), gt_fingerprint=m.get("gt_fingerprint"),
+                         tag=nt.get("tag", ""), note=nt.get("note", ""), pinned=bool(nt.get("pinned", False))))
     df = pd.DataFrame(rows, columns=INDEX_COLUMNS)
     return df.sort_values("created", ascending=False).reset_index(drop=True) if len(df) else df
+
+
+def read_notes(rid: str, root: Path | None = None) -> dict:
+    f = (root or EXP_DIR) / rid / NOTES
+    try:
+        return json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def set_notes(rid: str, root: Path | None = None, **fields) -> dict:
+    """Пометки к прогону: tag (подход, например «5 к/с» или «детектор B»), note, pinned. Пустые значения удаляют поле."""
+    d = (root or EXP_DIR) / rid
+    if not (d / "meta.json").exists():
+        raise FileNotFoundError(f"прогон {rid} не найден")
+    cur = {**read_notes(rid, root), **{k: v for k, v in fields.items() if k in ("tag", "note", "pinned")}}
+    cur = {k: v for k, v in cur.items() if v not in ("", None, False)}
+    (d / NOTES).write_text(json.dumps(cur, ensure_ascii=False, indent=1), encoding="utf-8")
+    return cur
 
 
 def delete_run(rid: str, root: Path | None = None) -> bool:

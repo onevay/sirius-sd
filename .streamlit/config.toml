@@ -6,3 +6,7 @@ maxMessageSize = 200
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+primaryColor = "#0f766e"
+baseRadius = "0.5rem"

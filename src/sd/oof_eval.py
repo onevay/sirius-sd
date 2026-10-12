@@ -4,7 +4,7 @@
 оценку даёт модель, не видевшая это видео (фолды по видео, повторные перемешивания), а ТОЧКИ подбора — только порог оценки цикла `events.cycle_th` и порог события — помечены
 как оптимистичные (подбираются на тех же 31 клипах): цифра показывает потолок на этих данных, не ожидание на скрытом наборе.
 
-Вход — готовые запуски `sd recognize` (каталог `outputs/recognize/<клип>/0-ends_*/analysis`: признаки циклов) и метки жестов (`docs/review/gesture_gt.csv`/пул). Поза не пересчитывается.
+Вход — готовые запуски `sd recognize` (каталог `outputs/recognize/<клип>/0-ends_*/analysis`: признаки циклов) и метки жестов (`labels/review/gesture_gt.csv`/пул). Поза не пересчитывается.
 """
 from __future__ import annotations
 
@@ -52,14 +52,31 @@ def scene_group(video: str) -> str:
     return video
 
 
-def collect(root: Path = OUTPUTS / "recognize", videos: Sequence[str] | None = None, window: str = "0-end", runs_like: str | None = None) -> dict[str, ClipData]:
-    """Последний полный запуск `sd recognize` по каждому клипу: признаки циклов из его `analysis/`. `runs_like` — только запуски, в имени каталога позы которых есть эта подстрока
-    (например `_10fps` или `5fps`): так классификатор обучается и оценивается на признаках ОДНОЙ конфигурации, а не на «последнем, что считалось»."""
+def _clip_data(name: str, d: Path) -> ClipData:
+    """Признаки циклов одного готового запуска `sd recognize` (каталог с result.json и analysis/)."""
     from . import feature_auc as FA
     from .pipeline import _with_end
 
+    meta = json.loads((d / "result.json").read_text(encoding="utf-8"))
+    if (d / "analysis" / "dataset_cycles.parquet").exists():
+        tab = _with_end(FA.all_cycles_features(an=d / "analysis", vlm=None, dataset=d / "analysis" / "dataset_cycles.parquet"))
+        tab = tab.assign(start=tab.start.round(3))
+    else:   # клип без циклов: остаётся в оценке (событий нет), признаков нет
+        tab = pd.DataFrame({"video": pd.Series(dtype=object), "tid": pd.Series(dtype="int64"), "start": pd.Series(dtype=float), "peak_t": pd.Series(dtype=float)})
+    return ClipData(name, from_portable(meta["run_dir"]), d, tab)
+
+
+def collect(root: Path = OUTPUTS / "recognize", videos: Sequence[str] | None = None, window: str = "0-end", runs_like: str | None = None,
+            from_run: str | None = None) -> dict[str, ClipData]:
+    """Готовые запуски `sd recognize` по клипам: признаки циклов из их `analysis/`.
+
+    `from_run` — id прогона оценки (журнал `outputs/experiments`): берутся РОВНО те запуски, по которым считался этот прогон (одна конфигурация, воспроизводимо);
+    только полные клипы (окно с нуля до конца). Без него — последний полный запуск каждого клипа; `runs_like` — только запуски, в имени каталога позы которых есть
+    эта подстрока (например `_10fps`), чтобы не смешивать конфигурации."""
+    if from_run:
+        return collect_from_run(from_run, videos)
     out = {}
-    for vd in sorted(Path(root).iterdir()):
+    for vd in sorted(Path(root).iterdir()) if Path(root).exists() else []:
         if not vd.is_dir() or (videos is not None and vd.name not in videos):
             continue
         runs = sorted(d for d in vd.glob(f"{window}*") if (d / "result.json").exists())
@@ -67,15 +84,50 @@ def collect(root: Path = OUTPUTS / "recognize", videos: Sequence[str] | None = N
             runs = [d for d in runs if runs_like in str(json.loads((d / "result.json").read_text(encoding="utf-8")).get("run_dir", ""))]
         if not runs:
             continue
-        d = runs[-1]
-        meta = json.loads((d / "result.json").read_text(encoding="utf-8"))
-        if (d / "analysis" / "dataset_cycles.parquet").exists():
-            tab = _with_end(FA.all_cycles_features(an=d / "analysis", vlm=None, dataset=d / "analysis" / "dataset_cycles.parquet"))
-            tab = tab.assign(start=tab.start.round(3))
-        else:   # клип без циклов: остаётся в оценке (событий нет), признаков нет
-            tab = pd.DataFrame({"video": pd.Series(dtype=object), "tid": pd.Series(dtype="int64"), "start": pd.Series(dtype=float), "peak_t": pd.Series(dtype=float)})
-        out[vd.name] = ClipData(vd.name, from_portable(meta["run_dir"]), d, tab)
+        out[vd.name] = _clip_data(vd.name, runs[-1])
     return out
+
+
+def collect_from_run(run_id: str, videos: Sequence[str] | None = None, exp_root: Path | None = None) -> dict[str, ClipData]:
+    """Запуски распознавания, на которых построен прогон оценки `run_id` (meta.clips[*].out_dir). Клипы с окном не с нуля или без запуска пропускаются с ошибкой,
+    если не осталось ни одного (такую таблицу нельзя честно сопоставить с метками жестов полного видео)."""
+    from . import experiments as XP
+
+    meta = json.loads(((exp_root or XP.EXP_DIR) / run_id / "meta.json").read_text(encoding="utf-8"))
+    out: dict[str, ClipData] = {}
+    skipped = []
+    for c in meta.get("clips", []):
+        cid = c["clip_id"]
+        if videos is not None and cid not in videos:
+            continue
+        d = from_portable(c.get("out_dir"))
+        win = c.get("window") or [0.0, None]
+        if d is None or not (d / "result.json").exists() or float(win[0] or 0) > 0 or win[1] is not None:
+            skipped.append(cid)
+            continue
+        out[cid] = _clip_data(cid, d)
+    if not out:
+        raise ValueError(f"в прогоне {run_id} нет полных запусков распознавания (кэш удалён или оценка шла по фрагментам клипов): пропущено {len(skipped)}")
+    return out
+
+
+def runs_with_tables(exp_root: Path | None = None) -> list[dict]:
+    """Прогоны оценки, из которых можно собрать таблицу циклов (есть запуски по полным клипам), новые сверху: id, имя, создан, клипов с запусками."""
+    from . import experiments as XP
+
+    base = exp_root or XP.EXP_DIR
+    rows = []
+    for f in sorted(base.glob("*/meta.json"), reverse=True) if base.exists() else []:
+        try:
+            m = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        n = sum(1 for c in m.get("clips", []) if c.get("out_dir") and not float((c.get("window") or [0])[0] or 0) and (c.get("window") or [0, None])[1] is None
+                and (from_portable(c["out_dir"]) or Path("-")).joinpath("result.json").exists())
+        if n:
+            rows.append(dict(id=m.get("id", f.parent.name), name=m.get("name"), created=m.get("created"), clips=n, fps=(m.get("describe") or {}).get("fps"),
+                             cycle_model=(m.get("describe") or {}).get("cycle_model")))
+    return rows
 
 
 def match_gestures(cands: pd.DataFrame, gestures: pd.DataFrame, tol: float = 1.0) -> pd.DataFrame:

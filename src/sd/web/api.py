@@ -563,7 +563,7 @@ class WebApp:
         if name.startswith("run:"):
             return self._profile_from_journal(name[4:])
         insts = {s["name"] for s in SV.installed_solvers()}
-        return SV.resolve_profile(name) if name in insts and name not in PR.list_profiles() else PR.load(name)
+        return SV.resolve_profile(name) if name in insts and name not in PR.list_profiles() else PR.load_named(name)
 
     engine_factory = None        # тесты и встраивание: (профиль, clip_id, fps) -> StreamEngine вместо реальных моделей
 

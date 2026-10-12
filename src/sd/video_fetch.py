@@ -2,7 +2,7 @@
 
 Пока: HMDB51 (зеркало Hugging Face `divm/hmdb51`, отдельные mp4; весь набор 868 МБ, нужные 6 классов ≈ 83 МБ). Нужен именно HMDB51, потому что в нём «курение» (`smoke`) и
 жесты-двойники «рука ко рту» (`drink`, `eat`, `chew`) — из одного источника: в ваших видео затяжки и негативы из разных папок, и признаки частично выучивают сцену.
-Не делает: не обходит входы/Cloudflare, не качает с YouTube (Kinetics, AVA — вручную, см. docs/NEXT_STEPS.md).
+Не делает: не обходит входы/Cloudflare, не качает с YouTube (Kinetics, AVA — вручную, см. docs/DATA_AND_WEIGHTS.md).
 """
 from __future__ import annotations
 

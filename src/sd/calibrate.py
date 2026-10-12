@@ -3,7 +3,7 @@
 Поза уже посчитана и лежит в кэше запусков (`outputs/runs`), поэтому перебор дешёвый: пересчитываются только признаки и циклы.
 Две оценки:
   1) без разметки — число циклов в минуту по папкам (`курение` / `лжекурение`) и доля отброшенных жестов по причинам;
-  2) против визуальных интервалов (`docs/review/visual_intervals.csv`): какие интервалы «рука у рта» автомат нашёл (recall), сколько
+  2) против визуальных интервалов (`labels/review/visual_intervals.csv`): какие интервалы «рука у рта» автомат нашёл (recall), сколько
      лишних циклов (precision). Интервалы размечены просмотром кадров (не ground truth!) — это небольшая калибровочная выборка.
 """
 from __future__ import annotations
@@ -19,10 +19,10 @@ import pandas as pd
 
 from . import stages
 from .config import Cfg, _wrap, set_by_path
-from .paths import OUTPUTS, ROOT, weak_label
+from .paths import OUTPUTS, REVIEW, ROOT, weak_label
 from .tracks import Tracks
 
-INTERVALS_CSV = ROOT / "docs" / "review" / "visual_intervals.csv"
+INTERVALS_CSV = REVIEW / "visual_intervals.csv"
 
 
 def run_cfg(rd: Path) -> Cfg:

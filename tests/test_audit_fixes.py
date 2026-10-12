@@ -1,4 +1,4 @@
-"""Регрессионные тесты на найденное аудитом (docs/AUDIT_AND_CHANGES.md, раздел «Аудит 2»)."""
+"""Регрессионные тесты на найденное аудитом (аудит октября 2026; см. docs/REPORT.md)."""
 import os
 import threading
 import time

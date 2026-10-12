@@ -18,14 +18,16 @@ models/photo/*
 !models/photo/photo_v2/
 outputs/
 labels/*.csv
+labels/history/
 !labels/README.md
+# labels/review/*.csv (метки жестов и визуальные метки циклов) — в git: на них ссылаются команды и тесты
 .env
 .requirements.install.txt
 
 # открытые наборы данных (лицензии разные: HMDB51 и Stanford40 — исследовательские, не распространять) — качаются командами `sd photos fetch`, `sd fetch-videos`
 data_external/
 
-# кадры из записей площадки в иллюстрациях документов: перед публикацией репозитория убрать или заменить (см. README, «Перед публикацией репозитория»)
+# кадры из записей площадки: графики теперь пишутся в outputs/analysis/img (outputs/ не в git); строки — страховка от возврата кадров в docs/img (старые коммиты их ещё содержат, см. docs/REPORT.md, E0)
 docs/img/pose_sm6_t12.jpg
 docs/img/cycles_night_ir_1.jpg
 docs/img/cycles_group_canopy.jpg

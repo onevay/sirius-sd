@@ -26,8 +26,8 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 COPY configs ./configs
 COPY .streamlit ./.streamlit
-# метки и сводки, на которые ссылаются команды по умолчанию (docs/review/*.csv); остальные документы в образ не нужны
-COPY docs/review ./docs/review
+# разметка-ревью из репозитория (labels/review/*.csv: метки жестов и визуальные метки циклов), на неё ссылаются команды по умолчанию; документация в образ не нужна
+COPY labels/review ./labels/review
 RUN pip install --no-deps -e . && mkdir -p data data_external models outputs labels streams
 
 # том с весами/данными/результатами монтируется снаружи; пользователь без прав root

@@ -180,6 +180,18 @@ def load(name_or_path: str | Path, directory: Path | None = None) -> Profile:
     return Profile(name=raw.get("name") or f.stem, description=raw.get("description", ""), base=raw.get("base"), config=raw.get("config") or {}, options=raw.get("options") or {})
 
 
+def load_named(name: str, directory: Path | None = None) -> Profile:
+    """Профиль ТОЛЬКО по имени из каталога профилей (для интерфейсов: имя приходит от пользователя/браузера). В отличие от `load`, путь и суффикс не принимаются —
+    `GET /api/profile/..%5C..%5Cx.yaml` или `x.yaml` не прочитают файл вне configs/experiments."""
+    n = _check_name(name)
+    if n.endswith((".yaml", ".yml")) or "." in n.strip("."):
+        raise ValueError("имя профиля без расширения и точек: буквы, цифры, - _")
+    f = (directory or EXPERIMENTS_DIR) / f"{n}.yaml"
+    if not f.exists():
+        raise FileNotFoundError(f"профиль «{n}» не найден в {directory or EXPERIMENTS_DIR}")
+    return load(f)
+
+
 def list_profiles(directory: Path | None = None) -> list[str]:
     d = directory or EXPERIMENTS_DIR
     return sorted(f.stem for f in d.glob("*.yaml")) if d.exists() else []

@@ -56,9 +56,9 @@ def curve_chart(rep: EV.Report) -> go.Figure:
 def _open_button(df: pd.DataFrame, key: str, rid: str | None, clip_col: str = "clip_id", t_col: str | None = None) -> None:
     sel = st.dataframe(df, hide_index=True, on_select="rerun", selection_mode="single-row", key=key)
     rows = sel["selection"]["rows"] if sel and sel.get("selection") else []
-    if rows and rid and st.button("Открыть в просмотре", key=key + "_open"):
+    if rows and rid and st.button("Разобрать клип (видео, циклы, слабые места)", key=key + "_open"):
         r = df.iloc[rows[0]]
-        nav.go("view", view_src="Эксперимент", view_run=rid, view_clip=r[clip_col])
+        nav.go("validation", val_section="Анализ кэша", ca_run=rid, ca_clip=r[clip_col])
 
 
 def show(rep: EV.Report, meta: dict, rid: str | None, events: pd.DataFrame | None = None) -> None:

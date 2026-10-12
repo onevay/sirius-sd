@@ -182,7 +182,7 @@ def visual_labels_to_project(csv: Path, table: pd.DataFrame, tol_start: float = 
     """Метки в формате визуального просмотра (`video, tid, start, label`; start округлён до 0.1 с) -> формат проекта (`video, peak_t, cx, cy, label`).
 
     Стыкуются по (video, tid, ближайший start ≤ tol_start) с таблицей циклов, откуда берутся peak_t и положение. Метки без пары пропускаются.
-    Файл `docs/review/assistant_visual_labels.csv` — суждения ассистента, а не эталон: `source = "visual"`.
+    Файл `labels/review/assistant_visual_labels.csv` — суждения ассистента, а не эталон: `source = "visual"`.
     """
     lab = pd.read_csv(csv)
     rows = []

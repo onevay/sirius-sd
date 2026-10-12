@@ -60,7 +60,58 @@ Lock-файл `requirements.lock.txt` снят на Windows; платформе�
 
 ## 5. Docker
 
-`docker compose up ui` — разработчик, `up app` — оператор, `--profile monitor up -d monitor` — воркер, `--profile vlm up -d ollama` — локальный VLM, `run --rm cli <команда>` — любая команда. Данные, веса, результаты, разметка и `streams/` монтируются томами. **Образ в этой работе не собирался** (в среде разработки нет Docker): `docker compose config` корректен по структуре, но сборку и запуск нужно проверить на вашей машине.
+Образ содержит только **код и конфиги** (Python 3.13, зависимости по `requirements.txt`, CPU-сборка PyTorch). Данные, веса, метки и результаты монтируются томами (`docker-compose.yml`), поэтому записи объекта не копируются в образ, а веса меняются без пересборки.
+
+> **Статус проверки.** Образ ни разу не собирался (на машине разработки Docker недоступен). Проверено статически: `docker compose config` валиден; `pip install --dry-run` для Linux показал готовые колёса для всех пакетов. Первая проверка на машине с Docker: `docker compose build && docker compose run --rm cli doctor` (ожидается OK, кроме «пакеты моделей», «Ollama» и «видео данных», пока они не примонтированы). Это пункт E0 в [REPORT.md](REPORT.md).
+
+```bash
+docker compose build                                   # один раз (≈ 10–15 мин; сеть нужна только здесь и для весов)
+docker compose up ui                                   # Dev Studio: http://127.0.0.1:8501
+docker compose up app                                  # приложение оператора: http://127.0.0.1:8502
+docker compose --profile monitor up -d monitor         # воркер потока
+docker compose run --rm cli doctor                     # проверка окружения
+docker compose run --rm cli models get all             # веса в ./models
+docker compose run --rm cli recognize "/app/data/курение/sm_6.mp4" --start 0 --end 30     --cycle-bundle models/cycle/cycle_mvp              # результат: ./outputs/recognize/…
+docker compose --profile vlm up -d ollama              # локальный Ollama для VLM (наружу не публикуется)
+docker compose exec ollama ollama pull qwen3.5:2b-q4_K_M
+```
+
+| на хосте | в контейнере | режим | зачем |
+|---|---|---|---|
+| `./data` | `/app/data` | только чтение | ваши записи |
+| `./data_external` | `/app/data_external` | чтение/запись | открытые датасеты |
+| `./models` | `/app/models` | чтение/запись | веса, кэш HF, пакеты классификатора и фото-модели |
+| `./outputs` | `/app/outputs` | чтение/запись | кэши позы, журнал, результаты, база тревог |
+| `./labels` | `/app/labels` | чтение/запись | эталон, метки циклов и метки жестов (`labels/review/` входит в образ, `COPY labels/review`) |
+| `./configs/experiments`, `./configs/classifiers` | `/app/configs/…` | чтение/запись | профили и спецификации, создаваемые в интерфейсе |
+
+**Изоляция и приватность:**
+- процесс работает от обычного пользователя (uid 1000); в образе нет данных объекта;
+- интерфейс слушает `0.0.0.0` внутри контейнера, но порт публикуется как `127.0.0.1:…`;
+- полностью офлайн (веса уже в `./models`): `docker run --rm --network none -v "$PWD/data:/app/data:ro" -v "$PWD/models:/app/models" -v "$PWD/outputs:/app/outputs" -v "$PWD/labels:/app/labels" smoking-detection:cpu recognize "/app/data/курение/sm_6.mp4" --start 0 --end 30 --cycle-bundle models/cycle/cycle_mvp`;
+- Ollama: `OLLAMA_NO_CLOUD=1`, порт не публикуется, адрес `SD_OLLAMA_URL=http://ollama:11434`;
+- телеметрия Hugging Face и Ultralytics выключена переменными окружения.
+
+**Ускорители:**
+- Intel iGPU (OpenVINO GPU) в Docker Desktop на Windows и Mac недоступна: OpenVINO работает на CPU, в 3–10 раз медленнее. На Linux — `--device /dev/dri` и Intel compute-runtime (в образ не входит).
+- NVIDIA: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build ui` (CUDA-PyTorch cu126, `SD_TORCH_DEVICE=cuda`); нужны драйвер и NVIDIA Container Toolkit. Не проверялось.
+- Потоки — `SD_THREADS` (по умолчанию 2). На слабой машине ограничьте память: `mem_limit` сервиса и `memory=` в `%UserProfile%\.wslconfig`.
+
+**Перенос моделей на другую машину** (без Docker и с ним):
+1. Пакеты классификатора и фото-модели (без pickle) — вкладка «Модели → Перенос»: экспорт в zip и импорт с проверкой путей и sha256; либо копирование `models/cycle/<имя>/` и `models/photo/<имя>/`. Полный конвейер — решатель `.sdsolver.zip` ([ARCHITECTURE.md](ARCHITECTURE.md), раздел 4).
+2. Веса: `sd models get all` или копирование `models/`; `.pt` из чужих рук — только после `sd models scan`.
+3. Проверка: `sd doctor` (`docker compose run --rm cli doctor`).
+4. Новая модель: «Модели → Подключить» и «Проверить»; из консоли — `sd detector-eval <веса> --data …/data.yaml`.
+
+**Проблемы Docker:**
+
+| симптом | что делать |
+|---|---|
+| долгая первая сборка | тянет ≈ 3 ГБ (torch CPU, openvino, transformers, ultralytics); повторные — из кэша слоёв |
+| кириллица в путях | в образе `LANG=C.UTF-8`, `PYTHONUTF8=1`; на Windows путь к проекту лучше без пробелов |
+| «OpenVINO GPU не найден», медленно | ожидаемо внутри Docker Desktop; для iGPU запускайте `sd` на хосте |
+| «Ollama не запущен» | поднимите профиль: `docker compose --profile vlm up -d ollama` |
+| права на `./outputs` | на Linux-хосте: `chown -R 1000:1000 outputs models labels` |
 
 ## 6. Частые проблемы
 

@@ -37,7 +37,9 @@ def tab_photo():
         st.caption("«AUC только метаданные» — классификатор видит лишь размер/яркость/резкость: заметно выше 0.5 значит, что часть класса «угадывается» без содержимого (шорткат).")
     else:
         st.info("Аудит ещё не запускали: `sd.cmd photos audit`.")
-    img = ROOT / "docs" / "img" / "photo_eval.png"
+    from sd.paths import ANALYSIS_IMG
+
+    img = ANALYSIS_IMG / "photo_eval.png"
     if img.exists():
         st.subheader("Качество на фото")
         st.image(str(img), caption="AUC внутри наборов (CV по группам дублей) и при переносе между наборами")

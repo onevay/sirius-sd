@@ -14,6 +14,14 @@ CONFIGS = ROOT / "configs"
 DOCS = ROOT / "docs"
 LABELS = env_path("SD_LABELS", ROOT / "labels")
 STREAMS = env_path("SD_STREAMS", ROOT / "streams")   # имитация камер для мониторинга: папки <район>-<индекс>-<время начала>
+CYCLE_MODELS = MODELS / "cycle"                          # пакеты классификатора цикла (models/cycle/<имя>)
+PHOTO_MODELS = MODELS / "photo"
+CLASSIFIER_SPECS = env_path("SD_CLASSIFIERS", CONFIGS / "classifiers")   # спецификации классификатора (YAML)
+# разметка-«ревью» в репозитории (метки жестов, визуальные метки циклов, интервалы, аудит окон): labels/review/*.csv — в git, в отличие от labels/*.csv
+REVIEW = ROOT / "labels" / "review"
+# метки жестов (кандидаты: затяжка, питьё, телефон…): если в каталоге меток (SD_LABELS) есть свой файл — он главнее
+GESTURES_CSV = (LABELS / "gesture_gt.csv") if (LABELS / "gesture_gt.csv").exists() else (REVIEW / "gesture_gt.csv")
+ANALYSIS_IMG = OUTPUTS / "analysis" / "img"              # графики аналитических команд (раньше писались в docs/img)
 
 # папки данных пользователя -> слабая (клип-уровня) метка
 WEAK_LABEL_BY_FOLDER = {"курение": "smoking", "лжекурение": "fake"}
@@ -96,6 +104,8 @@ def portable(p: str | Path | None) -> str | None:
     """Путь → строка с токеном корня (`$DATA/…`) или абсолютная POSIX-строка, если путь вне известных корней."""
     if p is None or str(p) == "":
         return None
+    if any(str(p).startswith(tok + "/") for tok, _ in _roots()):     # уже переносимый: повторный вызов давал «$ROOT/$OUTPUTS/…» (такие пути не разворачивались)
+        return str(p)
     q = Path(p)
     if not q.is_absolute():
         q = Path.cwd() / q
@@ -127,6 +137,8 @@ def from_portable(s: str | Path | None) -> Path | None:
     if s is None or str(s) == "":
         return None
     t = str(s)
+    while t.startswith("$ROOT/$"):          # двойной токен из старых журналов (portable от уже переносимой строки)
+        t = t[len("$ROOT/"):]
     for tok, root in _roots():
         if t.startswith(tok + "/"):
             rel = PurePosixPath(t[len(tok) + 1:])

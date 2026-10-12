@@ -105,7 +105,7 @@ def make_handler(app: WebApp):
                 if not f.is_file():
                     f = STATIC / "index.html"
                 return self._file(f)
-            except NotFound as e:
+            except (NotFound, FileNotFoundError) as e:
                 self._json(dict(error=str(e)), 404)
             except (ValueError, KeyError) as e:
                 self._json(dict(error=str(e)), 400)

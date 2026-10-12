@@ -40,7 +40,7 @@ def catalog() -> dict:
 
 
 def profile_get(name: str) -> dict:
-    p = PR.load(name)
+    p = PR.load_named(name)
     eff = _flat(p.cfg().to_dict())
     default = _flat(load_config(None).to_dict())
     iss = [dict(level=i.level, code=i.code, text=i.text) for i in SV.check(p, "replay", devices=True)]
@@ -58,13 +58,13 @@ def profile_save(name: str, body: dict) -> dict:
 
 
 def profile_clone(src: str, dst: str) -> dict:
-    p = PR.load(src)
+    p = PR.load_named(src)
     PR.save(PR.Profile(name=dst, description=p.description, base=p.base, config=dict(p.config), options=dict(p.options)))
     return profile_get(dst)
 
 
 def profile_export_yaml(name: str) -> str:
-    return yaml.safe_dump(PR.load(name).to_dict(), allow_unicode=True, sort_keys=False)
+    return yaml.safe_dump(PR.load_named(name).to_dict(), allow_unicode=True, sort_keys=False)
 
 
 def profile_import_yaml(data: bytes, name: str | None = None) -> dict:
@@ -101,7 +101,7 @@ def model_remove(mid: str) -> bool:
 
 def solver_pack(profile: str, name: str | None, with_weights: bool, with_dataset: bool, classifier: str | None = None, run_id: str | None = None) -> dict:
     EXPORTS.mkdir(parents=True, exist_ok=True)
-    p = RN.with_classifier(PR.load(profile), classifier or None)
+    p = RN.with_classifier(PR.load_named(profile), classifier or None)
     nm = (name or profile).strip()
     out = SV.pack(p, EXPORTS / nm, name=nm, with_weights=with_weights, with_dataset=with_dataset, run_id=run_id or None)
     f = Path(out["path"])

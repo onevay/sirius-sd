@@ -133,7 +133,7 @@ class Tuning:
             man = C.train(tab, spec, MODELS / "cycle" / name, meta=dict(source="web"))
             attached = None
             if attach:
-                p = PR.load(attach)
+                p = PR.load_named(attach)
                 PR.save(PR.Profile(name=p.name, description=p.description, base=p.base, config=p.config, options={**p.options, "cycle_bundle": f"models/cycle/{name}"}))
                 attached = attach
             return dict(bundle=f"models/cycle/{name}", auc=man["cv"].get("auc_ensemble"), n=man["n"], n_pos=man["n_pos"], attached=attached)

@@ -208,7 +208,7 @@ def _spec(model_id: str) -> dict:
                 present=bool((s.local_path and s.local_path.exists()) or s.rtmlib))
 
 
-# оценка потребности в памяти по компонентам (ГБ): порядок величин из docs/ANALYSIS.md и docs/MVP.md, НЕ измерение на конкретной машине
+# оценка потребности в памяти по компонентам (ГБ): порядок величин из замеров (docs/REPORT.md, раздел 5), НЕ измерение на конкретной машине
 RAM_VRAM_GB = dict(pose_n=0.5, pose_s=0.8, pose_m=1.5, pose_x=3.0, rtmpose_s=0.3, rtmpose_m=0.6, detector=0.35, clip_b32=0.5, convnext_b=1.2, vlm_2b_q4=2.4, vlm_4b_q4=3.8, vlm_8b_q4=6.0)
 
 
