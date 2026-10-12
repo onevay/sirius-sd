@@ -92,14 +92,6 @@ def task_panel(kinds: tuple[str, ...] | None = None, key: str = "tp", limit: int
     _panel()
 
 
-def finished_since(task_id: str, after: float) -> dict | None:
-    """Последняя завершённая задача типа task_id, начатая после момента `after` (для «показать результат, как только готово»)."""
-    for r in T.list_tasks(limit=40):
-        if r["task"] == task_id and r["state"] == "готово" and (r.get("created") or 0) >= after:
-            return r
-    return None
-
-
 # ---------------------------------------------------------------------------------------------- выбор
 @st.cache_data(ttl=10, show_spinner=False)
 def _runs(stamp: float) -> pd.DataFrame:
@@ -153,6 +145,45 @@ def confirm(label: str, key: str, warning: str, action, *, disabled: bool = Fals
     res = st.session_state.pop(key + "_result", None)
     if res:
         (st.success if res[0] == "ok" else st.error)(str(res[1]) if res[1] is not None else "готово")
+
+
+# ---------------------------------------------------------------------------------------------- оформление
+CSS = """
+<style>
+.block-container {padding-bottom: 3rem; max-width: 1560px;}
+h1, h2, h3 {letter-spacing: -0.01em;}
+div[data-testid="stMetric"] {background: rgba(15,118,110,0.06); border: 1px solid rgba(15,118,110,0.18); border-radius: 10px; padding: 0.55rem 0.8rem;}
+div[data-testid="stMetricLabel"] p {font-size: 0.8rem; opacity: 0.8;}
+.sd-head {display:flex; align-items:baseline; gap:0.8rem; flex-wrap:wrap; margin: 0 0 0.2rem 0;}
+.sd-head h2 {margin:0; padding:0;}
+.sd-sub {opacity:0.72; font-size:0.92rem; margin: 0 0 0.9rem 0;}
+.sd-chip {display:inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.78rem; border:1px solid rgba(128,128,128,0.35); margin-right:0.3rem;}
+.sd-chip.ok {border-color: rgba(22,163,74,0.5); color: #16a34a;}
+.sd-chip.warn {border-color: rgba(217,119,6,0.55); color: #d97706;}
+.sd-chip.err {border-color: rgba(220,38,38,0.55); color: #dc2626;}
+section[data-testid="stSidebar"] .stCaption {line-height: 1.35;}
+</style>
+"""
+
+
+def style() -> None:
+    """Общие стили Dev Studio (один раз за прогон страницы)."""
+    st.html(CSS)
+
+
+def header(title: str, subtitle: str = "", chips: list[tuple[str, str]] | None = None) -> None:
+    """Заголовок страницы: название, строка «что здесь делают», метки состояния (текст, ok|warn|err|'')."""
+    import html
+
+    ch = "".join(f'<span class="sd-chip {k}">{html.escape(t)}</span>' for t, k in (chips or []))
+    st.html(f'<div class="sd-head"><h2>{html.escape(title)}</h2>{ch}</div>' + (f'<div class="sd-sub">{html.escape(subtitle)}</div>' if subtitle else ""))
+
+
+def sections(options: list[str], key: str) -> str:
+    """Переключатель разделов страницы (горизонтальный, без «пустого» выбора); значение переживает переходы между вкладками (nav.go может задать его заранее)."""
+    if st.session_state.get(key) not in options:
+        st.session_state[key] = options[0]
+    return st.radio("Раздел", options, horizontal=True, label_visibility="collapsed", key=key)
 
 
 def file_mtime(p: str | Path) -> float:

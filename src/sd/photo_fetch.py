@@ -5,7 +5,7 @@
 чтобы потом смотреть качество отдельно на «трудных» негативах.
 
 Что НЕ делает: не использует Roboflow/Kaggle/Ultralytics Platform (нужен вход, а их Cloudflare не обходим) — для них
-в docs/NEXT_STEPS.md даны ссылки и раскладка, которую понимает `scan_photos`.
+в docs/DATA_AND_WEIGHTS.md даны ссылки и раскладка, которую понимает `scan_photos`.
 """
 from __future__ import annotations
 

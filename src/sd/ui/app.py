@@ -1,10 +1,11 @@
-"""Dev Studio — интерфейс разработчика. Запуск:  sd.cmd ui   (или streamlit run src/sd/ui/app.py).
+"""Dev Studio — интерфейс разработчика. Запуск:  sd.cmd ui   (или streamlit run src/sd/ui/app.py). Описание — docs/DEV_STUDIO.md.
 
-Вкладки идут в порядке работы над моделью (docs/DEV_STUDIO.md):
-  Валидация      — проверить конфигурацию на размеченных папках, отчёт и PDF, анализ кэша (где и почему ошибки), сравнение прогонов, поток
+Вкладки в порядке работы над моделью:
+  Валидация      — проверить конфигурацию на размеченных папках: запуск с проверкой до старта, отчёт и PDF, разбор слабых мест по кэшу, поток
+  Аналитика      — сравнение подходов по журналу: метрики и скорость, клип × подход, ошибки и порог, влияние параметров, классификаторы
+  Конструктор    — схема конвейера и правка любых его параметров с ценой правки; оценка без сохранения, сохранение профиля, серия вариантов
   Задачи         — разметка событий и жестов, признаки, обучение классификатора (диагностика, пакет), результаты, очередь фоновых задач
-  Данные         — каталог видео, проблемы данных, версии разметки с откатом, решения оператора → эталон
-  Эксперименты   — журнал прогонов, варианты профиля, метки циклов из эталона
+  Данные         — каталог видео, проблемы данных, версии разметки с откатом, метки циклов, решения оператора → эталон
   Модели         — профили, реестр весов, свои модели, перенос
   Профилирование — скорость по кэшу, лестница вычислений, машина
   Выпуск         — ворота качества → решатель + PDF + манифест; установка решателя
@@ -16,17 +17,18 @@ import sd._env  # noqa: F401,E402
 
 import streamlit as st
 
-from sd.ui import nav, p_data, p_experiments, p_models, p_profiling, p_release, p_tasks, p_validation
+from sd.ui import nav, p_analytics, p_data, p_designer, p_models, p_profiling, p_release, p_tasks, p_validation
 
 st.set_page_config(page_title="Dev Studio · детекция курения", layout="wide", page_icon="🧪")
 nav.PAGES.update(
-    validation=st.Page(p_validation.render, title="Валидация", url_path="validation", default=True),
-    tasks=st.Page(p_tasks.render, title="Задачи", url_path="tasks"),
-    data=st.Page(p_data.render, title="Данные", url_path="data"),
-    experiments=st.Page(p_experiments.render, title="Эксперименты", url_path="experiments"),
-    models=st.Page(p_models.render, title="Модели", url_path="models"),
-    profiling=st.Page(p_profiling.render, title="Профилирование", url_path="profiling"),
-    release=st.Page(p_release.render, title="Выпуск", url_path="release"),
+    validation=st.Page(p_validation.render, title="Валидация", url_path="validation", default=True, icon=":material/fact_check:"),
+    analytics=st.Page(p_analytics.render, title="Аналитика", url_path="analytics", icon=":material/insights:"),
+    designer=st.Page(p_designer.render, title="Конструктор", url_path="designer", icon=":material/account_tree:"),
+    tasks=st.Page(p_tasks.render, title="Задачи", url_path="tasks", icon=":material/construction:"),
+    data=st.Page(p_data.render, title="Данные", url_path="data", icon=":material/database:"),
+    models=st.Page(p_models.render, title="Модели", url_path="models", icon=":material/deployed_code:"),
+    profiling=st.Page(p_profiling.render, title="Профилирование", url_path="profiling", icon=":material/speed:"),
+    release=st.Page(p_release.render, title="Выпуск", url_path="release", icon=":material/rocket_launch:"),
 )
 
 
@@ -38,7 +40,10 @@ def _sidebar() -> None:
 
     with st.sidebar:
         st.markdown("### 🧪 Dev Studio")
+        st.caption("Детекция курения · интерфейс разработчика")
         st.text_input("Кто работает", key="who", placeholder="имя или инициалы", help="пишется в разметку, версии разметки и отчёты")
+        if not UC.who():
+            st.caption("⚠️ укажите имя — без него правки разметки не подписаны")
 
         @st.fragment(run_every=5)
         def _status() -> None:
@@ -62,12 +67,14 @@ def _sidebar() -> None:
                 st.caption("сейчас ничего не выполняется")
 
         _status()
+        st.markdown("**Состояние**")
+        runs = UC.runs_df()
+        if len(runs):
+            r = runs.iloc[0]
+            st.caption(f"последний прогон: {r['name']} · F1 {r['f1']:.3f} · {str(r['created'])[5:16]}")
         gt = GT.load()
         v = LH.versions("events")
-        st.markdown("**Разметка**")
-        st.caption(f"эталон: {len(gt)} строк, {gt.clip_id.nunique() if len(gt) else 0} клипов · версий {len(v)}" + (f" · последняя {v.iloc[0].ts[:16]}" if len(v) else ""))
-        if not UC.who():
-            st.caption("⚠️ укажите имя — без него правки разметки не подписаны")
+        st.caption(f"эталон: {len(gt)} строк, {gt.clip_id.nunique() if len(gt) else 0} клипов · версий {len(v)}" + (f" · последняя {v.iloc[0].ts[5:16]}" if len(v) else ""))
         st.caption("Руководство: docs/DEV_STUDIO.md")
 
 

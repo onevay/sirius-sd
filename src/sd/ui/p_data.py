@@ -4,6 +4,7 @@
   Каталог              — по папкам и по видео: длительность, разрешение, слабая метка, эталон, метки жестов, готовые запуски
   Проблемы             — конфликт метки папки и эталона, неразмеченные клипы, затяжки без эталона, дубликаты файлов, нечитаемые видео
   Версии разметки      — история файлов разметки, отличия двух версий, откат (откат тоже сохраняется версией)
+  Метки циклов         — метки циклов (затяжка / не затяжка) из эталона событий по выбранному прогону
   Обратная связь       — решения оператора (подтверждено / ложное) → эталон: сколько ждёт переноса, перенос
 """
 from __future__ import annotations
@@ -14,12 +15,14 @@ import pandas as pd
 import streamlit as st
 
 from sd import data_catalog as DC
+from sd import experiments as XP
 from sd import labels_history as LH
 from sd import library as LIB
+from sd.paths import from_portable
 from sd.ui import common as UC
 from sd.ui import nav
 
-SECTIONS = ["Каталог", "Проблемы", "Версии разметки", "Обратная связь оператора"]
+SECTIONS = ["Каталог", "Проблемы", "Версии разметки", "Метки циклов", "Обратная связь оператора"]
 
 
 @st.cache_data(show_spinner="читаем каталог видео…", ttl=60)
@@ -161,9 +164,49 @@ def _feedback_section() -> None:
                disabled=not s.get("pending"))
 
 
+def _cycle_labels() -> None:
+    from sd import dataset as DS
+    from sd import labels_from_gt as LG
+    from sd.tracks import Tracks
+
+    rid = UC.run_select("Прогон (по ручному эталону)", key="cl_run", mode="events")
+    if not rid:
+        return
+    neg = st.checkbox("Циклы вне размеченных интервалов просмотренного клипа считать негативами", value=True,
+                      help="отключите, если в клипах размечены не все курения: иначе неразмеченное курение станет ложным негативом")
+    iou_th = st.slider("Порог IoU рамок", 0.1, 0.9, 0.3, 0.05)
+    _, meta, _, gt = XP.load_run(rid)
+    parts, missing, boxes = [], [], {}
+    for clip in meta["clips"]:
+        out, rd = from_portable(clip.get("out_dir")), from_portable(clip.get("run_dir"))
+        f = out / "analysis" / "dataset_cycles.parquet" if out else None
+        if not (f and f.exists() and rd and (rd / "pose" / "tracks.parquet").exists()):
+            missing.append(clip["clip_id"])
+            continue
+        boxes[clip["clip_id"]] = Tracks.load(rd / "pose")
+        parts.append(pd.read_parquet(f))
+    if missing:
+        st.caption(f"Без таблицы циклов или треков (кэш удалён или прогон без циклов): {len(missing)} клипов.")
+    if not parts:
+        return
+    cycles = pd.concat(parts, ignore_index=True)
+    labels = LG.cycle_labels_from_gt(cycles, gt, lambda v, tid, t: boxes[v].box_at(tid, t) if v in boxes else None, iou_th=iou_th, unlabeled_as_negative=neg)
+    st.write(f"Циклов {len(cycles)}, получено меток {len(labels)}: {LG.summarize(labels)}")
+    st.dataframe(labels.round(2).head(200), hide_index=True)
+
+    def _do():
+        from sd import labels_history as LH
+
+        LH.snapshot("cycles", UC.who(), f"перед записью меток циклов из эталона ({rid})", "import", force=True)
+        return f"записано: {DS.save_labels_bulk(labels)}; ручные метки не затронуты"
+
+    UC.confirm("Записать в labels/cycle_labels.csv", "cl_save", "Прежние метки циклов из эталона (source=gt) будут заменены; ручные останутся. Текущий файл сохранится версией.", _do,
+               disabled=labels.empty)
+
+
 def render() -> None:
-    st.header("Данные")
-    if "data_section" not in st.session_state:
-        st.session_state["data_section"] = SECTIONS[0]
-    sec = st.radio("Раздел", SECTIONS, horizontal=True, label_visibility="collapsed", key="data_section")
-    {"Каталог": _catalog_section, "Проблемы": _issues_section, "Версии разметки": _versions_section, "Обратная связь оператора": _feedback_section}[sec]()
+    UC.style()
+    UC.header("Данные", "Что есть, что размечено и где разметка противоречит себе; версии разметки с откатом; решения оператора → эталон.")
+    sec = UC.sections(SECTIONS, "data_section")
+    {"Каталог": _catalog_section, "Проблемы": _issues_section, "Версии разметки": _versions_section, "Метки циклов": _cycle_labels,
+     "Обратная связь оператора": _feedback_section}[sec]()

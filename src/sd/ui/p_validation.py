@@ -4,7 +4,6 @@
   Запуск            — данные, профиль, классификатор, правки; чек-лист до запуска (устройство, утечка обучения, кэш, повтор прогона); оценка — фоновой задачей
   Результат и PDF   — метрики с интервалом, порог, клипы, ошибки; PDF-отчёт (с парным сравнением с базовым прогоном)
   Анализ кэша       — клип × метрика по всем клипам прогона, слабые места по правилам, видео клипа с циклами, история клипа по всем прогонам
-  Сравнение         — два прогона на общих клипах: парный бутстрэп, изменившиеся клипы
   Поток             — имитация реального времени по видео (тревоги, задержка, × реального времени)
 """
 from __future__ import annotations
@@ -17,7 +16,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-import yaml
 
 from sd import cache_analysis as CA
 from sd import catalog as CAT
@@ -30,35 +28,15 @@ from sd import solver as SV
 from sd.config import stable_hash
 from sd.paths import portable, video_id
 from sd.ui import common as UC
-from sd.ui import nav, profile_editor, report_view
+from sd.ui import nav, report_view
 
-SECTIONS = ["Запуск", "Результат и PDF", "Анализ кэша", "Сравнение", "Поток"]
+SECTIONS = ["Запуск", "Результат и PDF", "Анализ кэша", "Поток"]
 POLICIES = {"fixed": "порог из профиля (честно)", "plateau": "центр плато F1 (подбор на этих же клипах)", "best": "вершина кривой (оптимистично)"}
 
 
 @st.cache_data(show_spinner=False, ttl=30)
 def _dirs() -> pd.DataFrame:
     return LIB.discover_dirs()
-
-
-def _flat(d: dict, prefix: str = "") -> dict:
-    out = {}
-    for k, v in d.items():
-        kk = f"{prefix}{k}"
-        if isinstance(v, dict) and v:
-            out.update(_flat(v, kk + "."))
-        else:
-            out[kk] = v
-    return out
-
-
-def diff_sets(base: PR.Profile, prof: PR.Profile) -> list[str]:
-    """Правки `ключ=значение`, превращающие base в prof (по действующей конфигурации и опциям) — для команды `sd eval -s …`."""
-    a, b = _flat(base.cfg().to_dict()), _flat(prof.cfg().to_dict())
-    out = [f"{k}={yaml.safe_dump(v, default_flow_style=True, allow_unicode=True).strip().removesuffix('...').strip()}" for k, v in b.items() if a.get(k) != v]
-    oa, ob = base.opts(), prof.opts()
-    out += [f"options.{k}={json.dumps(v, ensure_ascii=False)}" for k, v in ob.items() if oa.get(k) != v]
-    return out
 
 
 def _cached_count(prof: PR.Profile, videos: list[Path], max_sec: float) -> tuple[int, int] | None:
@@ -110,17 +88,12 @@ def _launch() -> None:
     bundles = [b.id for b in CAT.cycle_bundles()]
     cls = c[1].selectbox("Классификатор цикла", [None, *bundles], key="val_cls", format_func=lambda x: f"как в профиле ({Path(base.opts().get('cycle_bundle') or '—').name})" if x is None else Path(x).name)
     c[2].caption(base.description[:300] or "—")
-    sets: list[str] = []
-    with st.expander("Параметры и модели (правки не меняют файл профиля — уходят в прогон как `-s ключ=значение`)"):
-        try:
-            edited = profile_editor.editor(base, key="val_pe", classifier=cls or base.opts().get("cycle_bundle"))
-            sets = diff_sets(base, edited)
-        except Exception as e:      # noqa: BLE001
-            st.error(f"редактор параметров: {e}")
-        extra = st.text_area("Дополнительные правки (по одной на строку, `ключ=значение`)", key="val_sets", height=70, placeholder="video.process_fps=10")
-        sets += [x.strip() for x in extra.splitlines() if x.strip()]
-        if sets:
-            st.code("\n".join(sets), language=None)
+    c = st.columns([5, 2], vertical_alignment="bottom")
+    extra = c[0].text_area("Точечные правки профиля (по одной на строку, `ключ=значение`; файл профиля не меняется)", key="val_sets", height=68,
+                           placeholder="video.process_fps=10")
+    if "designer" in nav.PAGES:
+        c[1].page_link(nav.PAGES["designer"], label="Гибкая правка — «Конструктор»", icon="🧩")
+    sets = [x.strip() for x in extra.splitlines() if x.strip()]
     prof, perr = None, None
     try:
         prof = PR.with_overrides(RN.with_classifier(base, cls), sets)
@@ -314,62 +287,16 @@ def _cache() -> None:
         st.dataframe(CA.clip_history(cid), hide_index=True)
 
 
-def _compare() -> None:
-    from sd import sweep as SW
-
-    c = st.columns(2)
-    with c[0]:
-        a = UC.run_select("Первый (базовый)", key="cmp_a", mode="events")
-    with c[1]:
-        b = UC.run_select("Второй (новый)", key="cmp_b", mode="events")
-    if not a or not b:
-        return
-    if a == b:
-        st.info("Выберите два разных прогона.")
-        return
-    try:
-        r = SW.compare_saved(a, b)
-    except Exception as e:      # noqa: BLE001
-        st.warning(str(e))
-        return
-    if r["diff"] is None:
-        st.warning("Мало общих клипов для сравнения (нужно ≥ 3).")
-        return
-    k = st.columns(3)
-    k[0].metric(f"F1: второй − первый ({r['clips']} общих клипов)", f"{r['diff'] * 100:+.1f} п.п.", f"95 %: {r['lo'] * 100:+.1f} … {r['hi'] * 100:+.1f}")
-    k[1].metric("Вероятность «второй лучше»", f"{r['p_better']:.0%}")
-    verdict = "второй лучше" if r["lo"] > 0 else ("первый лучше" if r["hi"] < 0 else "различие в пределах шума")
-    k[2].metric("Вывод", verdict)
-    if not r["same_gt"]:
-        st.error("Эталон в прогонах различается — сравнение некорректно: пересчитайте оба на текущей разметке.")
-    ra, ma, _, _ = XP.load_run(a)
-    rb, mb, _, _ = XP.load_run(b)
-    j = ra.per_clip[["clip_id", "f1", "status"]].merge(rb.per_clip[["clip_id", "f1", "status"]], on="clip_id", suffixes=("_1", "_2"))
-    j = j[(j.f1_1.fillna(-1) != j.f1_2.fillna(-1)) | (j.status_1 != j.status_2)]
-    st.markdown("**Клипы, где результат изменился**")
-    st.dataframe(j, hide_index=True)
-    da, db = _flat(ma.get("profile", {}).get("config") or {}), _flat(mb.get("profile", {}).get("config") or {})
-    keys = sorted(set(da) | set(db))
-    diff = [dict(параметр=k_, первый=da.get(k_), второй=db.get(k_)) for k_ in keys if da.get(k_) != db.get(k_)]
-    oa, ob = ma.get("profile", {}).get("options") or {}, mb.get("profile", {}).get("options") or {}
-    diff += [dict(параметр=f"options.{k_}", первый=str(oa.get(k_)), второй=str(ob.get(k_))) for k_ in sorted(set(oa) | set(ob)) if oa.get(k_) != ob.get(k_)]
-    st.markdown("**Чем отличаются конфигурации**")
-    st.dataframe(pd.DataFrame(diff), hide_index=True) if diff else st.caption("параметры профилей совпадают")
-
-
 def render() -> None:
-    st.header("Валидация")
-    if "val_section" not in st.session_state:
-        st.session_state["val_section"] = SECTIONS[0]
-    sec = st.radio("Раздел", SECTIONS, horizontal=True, label_visibility="collapsed", key="val_section")
+    UC.style()
+    UC.header("Валидация", "Проверка конфигурации на размеченных папках: запуск с проверкой до старта, отчёт и PDF, разбор слабых мест по кэшу, поток.")
+    sec = UC.sections(SECTIONS, "val_section")
     if sec == "Запуск":
         _launch()
     elif sec == "Результат и PDF":
         _result()
     elif sec == "Анализ кэша":
         _cache()
-    elif sec == "Сравнение":
-        _compare()
     else:
         from sd.ui import page_stream
 

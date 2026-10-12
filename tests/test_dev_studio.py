@@ -202,3 +202,65 @@ def test_runs_with_tables_and_collect_from_run_errors(run):
     assert O.runs_with_tables(root) == []                       # подставной распознаватель не оставил запусков на диске
     with pytest.raises(ValueError, match="нет полных запусков"):
         O.collect_from_run(rid, exp_root=root)
+
+
+# ---------------------------------------------------------------------------------------------- аналитика подходов и конструктор
+@pytest.fixture()
+def two_runs(tmp_path):
+    d1, d2 = make_world(tmp_path)
+    gt = _gt(tmp_path, d1, d2)
+    kw = dict(policy="fixed", gt_df=gt, probe_fn=probe, cache_root=tmp_path / "c", exp_root=tmp_path / "exp", n_boot=10)
+    a = R.evaluate_dirs([d1, d2], PR.heuristic_profile(), recognize_fn=Fake({"s1": [(10, 20, 0.9)], "f1": [(5, 12, 0.8)]}), **kw)
+    hp = PR.heuristic_profile()
+    b = R.evaluate_dirs([d1, d2], PR.Profile("v2", config={**hp.config, "events.cycle_th": 0.3}, options=dict(hp.options)),
+                        recognize_fn=Fake({"s1": [(10, 20, 0.9)], "s2": [(31, 44, 0.9)]}), **kw)
+    return a.run_id, b.run_id, tmp_path / "exp"
+
+
+def test_notes_and_catalog(two_runs):
+    from sd import compare as CP
+
+    a, b, root = two_runs
+    XP.set_notes(a, root, tag="база", note="первый", pinned=True)
+    runs = XP.list_runs(root)
+    assert runs.set_index("id").loc[a, "tag"] == "база" and bool(runs.set_index("id").loc[a, "pinned"])
+    XP.set_notes(a, root, tag="", pinned=False)                     # пустые значения удаляют поле
+    assert XP.read_notes(a, root) == {"note": "первый"}
+    cat = CP.catalog(root)
+    assert "cfg.events.cycle_th" in cat and "cfg.events.cycle_th" in CP.varying(cat)
+    assert cat.set_index("id").loc[b, "cfg.events.cycle_th"] == 0.3
+
+
+def test_compare_matrices(two_runs):
+    from sd import compare as CP
+
+    a, b, root = two_runs
+    f1 = CP.per_clip([a, b], root)
+    out = CP.outcome_matrix([a, b], root)
+    assert set(f1.columns) == {a, b} and (out.nunique(axis=1) > 1).any()     # клип s2 найден только во втором подходе
+    assert CP.disagreement(f1).max() > 0
+    assert set(CP.error_causes([a, b], root).id) <= {a, b}
+    assert set(CP.curves([a, b], root).id) == {a, b}
+    cat = CP.catalog(root)
+    eff = CP.effect(cat, "cfg.events.cycle_th")
+    assert set(eff["значение"]) == {"0.3", str(PR.heuristic_profile().cfg()["events"]["cycle_th"])}
+    pairs = CP.controlled_pairs(cat, "cfg.events.cycle_th")
+    assert len(pairs) == 1                                           # отличаются только этим параметром
+    m = CP.pairwise([a, b], n=50, root=root)
+    assert m.loc[a, a] == "—" and m.loc[a, b] != ""
+
+
+def test_arch_schema_impact_and_graph():
+    from sd import arch as A
+
+    df = A.parse_defaults()
+    assert len(df) > 80 and (df.comment == "").sum() == 0             # у каждого параметра default.yaml есть описание
+    assert A.stage_of("pose.imgsz") == "pose" and A.stage_of("options.objects") == "evidence" and A.stage_of("events.cycle_th") == "events"
+    assert A.impact(["events.cycle_th"])["level"] == 0 and A.impact(["video.process_fps"])["level"] == 4
+    assert "series" in A.impact(["cycles.th_in"])["recompute"] or A.impact(["cycles.th_in"])["recompute"][0] == "cycles"
+    base = PR.heuristic_profile()
+    new = PR.with_overrides(base, ["video.process_fps=7", "options.objects=[smoking_yolo11m_beehzod]"])
+    d = A.diff(base, new)
+    assert set(d.key) == {"video.process_fps", "options.objects"}
+    dot = A.dot(new, {"pose"}, {"series"})
+    assert dot.startswith("digraph") and "fde7c7" in dot and "smoking_yolo11m_beehzod" in dot

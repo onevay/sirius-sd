@@ -1,5 +1,5 @@
 name: mvp
-description: "Единственная рабочая конфигурация (i3-1115G4, iGPU, 7.7 ГБ ОЗУ), реальное время на записях 1080p: YOLO26n@960 (OpenVINO iGPU) + RTMPose-s только у людей с рукой у лица, 5 к/с, предмет — Beehzod YOLO11m на OpenVINO iGPU, фото-признак — zero-shot CLIP, классификатор cycle_mvp. Режим качества (10 к/с, ≈ в 2 раза медленнее реального времени): -s video.process_fps=10 -s options.cycle_bundle=models/cycle/cycle_mvp10. Отчёт — docs/FINAL.md."
+description: "Единственная рабочая конфигурация (i3-1115G4, iGPU, 7.7 ГБ ОЗУ), реальное время на записях 1080p: YOLO26n@960 (OpenVINO iGPU) + RTMPose-s только у людей с рукой у лица, 5 к/с, предмет — Beehzod YOLO11m на OpenVINO iGPU, фото-признак — zero-shot CLIP, классификатор cycle_mvp. Режим качества (10 к/с, ≈ в 2 раза медленнее реального времени): -s video.process_fps=10 -s options.cycle_bundle=models/cycle/cycle_mvp10. Отчёт — docs/REPORT.md."
 config:
   video.process_fps: 5
   pose.refine.gate_s: 3.0

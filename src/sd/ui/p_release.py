@@ -128,8 +128,7 @@ def _install() -> None:
 
 
 def render() -> None:
-    st.header("Выпуск")
-    if "rel_section" not in st.session_state:
-        st.session_state["rel_section"] = SECTIONS[0]
-    sec = st.radio("Раздел", SECTIONS, horizontal=True, label_visibility="collapsed", key="rel_section")
+    UC.style()
+    UC.header("Выпуск", "Единственный путь модели в продукт: ворота качества → решатель + PDF + манифест; установка решателя.")
+    sec = UC.sections(SECTIONS, "rel_section")
     {"Новый выпуск": _new, "Выпуски": _list, "Установить решатель": _install}[sec]()

@@ -9,9 +9,9 @@ data/
 data_external/
 models/
 outputs/
-labels/
-docs/img/
-docs/*.md
+labels/*.csv
+labels/history/
+docs/
 *.mp4
 *.avi
 *.pt

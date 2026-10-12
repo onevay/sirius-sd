@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -99,8 +98,7 @@ def _machine() -> None:
 
 
 def render() -> None:
-    st.header("Профилирование")
-    if "prof_section" not in st.session_state:
-        st.session_state["prof_section"] = SECTIONS[0]
-    sec = st.radio("Раздел", SECTIONS, horizontal=True, label_visibility="collapsed", key="prof_section")
+    UC.style()
+    UC.header("Профилирование", "На что способно железо: скорость позы по кэшу, лестница вычислений, характеристики машины.")
+    sec = UC.sections(SECTIONS, "prof_section")
     {"Скорость по кэшу": _speed, "Лестница вычислений": _ladder, "Машина": _machine}[sec]()

@@ -7,7 +7,7 @@ from sd.config import load_config
 @pytest.fixture(scope="session")
 def cfg():
     # Алгоритмические тесты используют синтетические сигналы под опорные пороги руководства (0.35 / 0.55);
-    # калибровка default.yaml (ANALYSIS.md, 7.3) на их результат влиять не должна.
+    # калибровка default.yaml (docs/REPORT.md, приложение А) на их результат влиять не должна.
     return load_config(overrides=["cycles.th_in=0.35", "cycles.th_out=0.55"])
 
 

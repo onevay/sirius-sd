@@ -21,7 +21,7 @@ from .calibrate import cfg_current_for_run, list_runs, with_params
 from .paths import GESTURES_CSV, OUTPUTS, ROOT
 from .tracks import Tracks
 
-GT_CSV = GESTURES_CSV          # метки жестов (paths.GESTURES_CSV): docs/review/gesture_gt.csv или labels/gesture_gt.csv
+GT_CSV = GESTURES_CSV          # метки жестов (paths.GESTURES_CSV): labels/review/gesture_gt.csv или labels/gesture_gt.csv
 POOL = OUTPUTS / "analysis" / "gesture_pool.parquet"
 GESTURE_LABELS = ("smoke", "drink", "phone", "eat", "touch_face", "other_neg")
 NON_GESTURE = ("no_gesture",)

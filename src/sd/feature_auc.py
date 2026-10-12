@@ -1,6 +1,6 @@
 """Проверка признаков цикла на разметке глазами: насколько каждый отделяет «курение» от «не курение» (AUC) — руководство §3.4, группы D/E.
 
-Разметка `docs/review/assistant_visual_labels.csv` — суждения ассистента по кадрам циклов, а НЕ эталон организаторов, и выборка мала (десятки
+Разметка `labels/review/assistant_visual_labels.csv` — суждения ассистента по кадрам циклов, а НЕ эталон организаторов, и выборка мала (десятки
 циклов, часть видео даёт по 5 циклов одного человека). Поэтому AUC здесь — грубая проверка «признак вообще несёт сигнал и в какую сторону»,
 а доверительные интервалы считаются бутстрэпом по ВИДЕО, а не по циклам (циклы одного ролика зависимы). Решения по порогам на этих числах не принимаются.
 """
@@ -13,9 +13,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .paths import OUTPUTS, ROOT
+from .paths import OUTPUTS, REVIEW, ROOT
 
-LABELS = ROOT / "docs" / "review" / "assistant_visual_labels.csv"
+LABELS = REVIEW / "assistant_visual_labels.csv"
 AN = OUTPUTS / "analysis"
 POS = ("smoke",)
 NEG = ("drink", "touch_face", "phone", "eat", "other_neg")
@@ -302,7 +302,7 @@ def pick_columns(t: pd.DataFrame) -> dict[str, list[str]]:
 def group_ablation(t: pd.DataFrame, repeats: int = 8, seed: int = 0) -> pd.DataFrame:
     """Грубая абляция групп: логистическая регрессия, фолды по видео (StratifiedGroupKFold, несколько перемешиваний), AUC на отложенных циклах.
 
-    Это не итоговый классификатор (он — LightGBM на настоящей разметке, docs/TRAINING.md), а проверка «какие группы вообще добавляют сигнал».
+    Это не итоговый классификатор (он — LightGBM на настоящей разметке, docs/MODEL_GUIDE.md), а проверка «какие группы вообще добавляют сигнал».
     """
     from sklearn.impute import SimpleImputer
     from sklearn.linear_model import LogisticRegression
@@ -415,7 +415,7 @@ def plot_auc(df: pd.DataFrame, out: Path, per_group: int = 4, info: str = "") ->
     ax.text(0.8, -0.9, "порог руководства 0.80", ha="center", va="bottom", fontsize=8, color=ink2, clip_on=False)
     ax.set_xlabel("AUC «курение против питья / касания лица / телефона»; усы — 95% интервал бутстрэпом по видео. AUC < 0.5: признак выше у не-курения", fontsize=8.5, color=ink2, labelpad=8)
     fig.suptitle("Какие признаки цикла отделяют курение: грубая проверка на 68 циклах", x=0.01, ha="left", fontsize=12, fontweight="bold", color=ink, y=0.995)
-    fig.text(0.01, 0.945 if nrows > 8 else 0.93, info or "метки — оценка ассистента по кадрам, не эталон; негативы в основном из другой папки видео (см. ANALYSIS.md, 7.5)",
+    fig.text(0.01, 0.945 if nrows > 8 else 0.93, info or "метки — оценка ассистента по кадрам, не эталон; негативы в основном из другой папки видео (см. docs/REPORT.md, приложение А)",
              ha="left", fontsize=8.5, color=ink2)
     present = [g for g, _ in blocks]
     handles = [plt.Rectangle((0, 0), 1, 1, color=GROUP_COLORS[g]) for g in present]

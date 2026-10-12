@@ -12,7 +12,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from .paths import EXTERNAL, OUTPUTS, PHOTO_MODELS, ROOT
+from .paths import ANALYSIS_IMG, EXTERNAL, OUTPUTS, PHOTO_MODELS, ROOT
 
 photos_app = typer.Typer(no_args_is_help=True, help="Фото-датасеты «курит / не курит»: загрузка публичных, аудит (дубли, шорткаты), признаки, классификатор, перенос на кропы видео.")
 console = Console(width=140)
@@ -41,7 +41,7 @@ def photo_roots() -> list[Path]:
 
 
 @photos_app.command("fetch", help="Скачать публичный набор без входа в аккаунт (stanford40 | mendeley_smoker_2400 | smoking_img_final_test — фото «курит / не курит»; cigdet — рамки сигарет для проверки детектора) "
-                                  "в data_external/. Остальные (Roboflow/Kaggle/Ultralytics) — вручную, ссылки в docs/NEXT_STEPS.md.")
+                                  "в data_external/. Остальные (Roboflow/Kaggle/Ultralytics) — вручную, ссылки в docs/DATA_AND_WEIGHTS.md.")
 def fetch_cmd(name: Annotated[str, typer.Argument(help="stanford40 | mendeley_smoker_2400 | smoking_img_final_test | cigdet")],
               easy_per_class: Annotated[int, typer.Option(help="stanford40: сколько случайных снимков брать из каждого «лёгкого» класса")] = 8,
               keep_zip: Annotated[bool, typer.Option(help="stanford40: не удалять zip после распаковки")] = False) -> None:
@@ -196,7 +196,7 @@ def eval_video_cmd(bundles: Annotated[str, typer.Argument(help="имена па�
     res.to_csv(PHOTO_OUT / "eval_video.csv", index=False)
 
 
-@photos_app.command("eval", help="Качество фото-классификатора на эмбеддингах: CV по группам дублей внутри набора, перенос между наборами, официальные сплиты, «трудные» негативы, страты яркости, zero-shot CLIP. Пишет outputs/photo/eval_*.csv и docs/img/photo_eval.png.")
+@photos_app.command("eval", help="Качество фото-классификатора на эмбеддингах: CV по группам дублей внутри набора, перенос между наборами, официальные сплиты, «трудные» негативы, страты яркости, zero-shot CLIP. Пишет outputs/photo/eval_*.csv и outputs/analysis/img/photo_eval.png.")
 def eval_cmd(kinds: Annotated[str, typer.Option(help="через запятую: logreg,svm,et")] = "logreg,svm,et",
              backbones: Annotated[str, typer.Option(help="через запятую: clip,convnext")] = "clip,convnext",
              seed: int = 0, zero_shot: Annotated[bool, typer.Option(help="посчитать zero-shot CLIP (один раз загрузит текстовую башню через torch)")] = True) -> None:
@@ -257,7 +257,7 @@ def eval_cmd(kinds: Annotated[str, typer.Option(help="через запятую:
         _tbl("CLIP без обучения (zero-shot): AUC по сходству с промптом", ["набор", "промпт", "AUC"], [[r.source, r.prompt, fmt(r.auc)] for r in zs.itertuples()])
         zs.to_csv(out / "eval_zero_shot.csv", index=False)
     meta = {s: v.get("shortcut", {}).get("auc_meta_only") for s, v in audit_meta.items() if not s.startswith("_")}
-    fig = PE.plot_eval(res["within"], t, ROOT / "docs" / "img" / "photo_eval.png", meta, shared=PE.shared_duplicate_groups(d))
+    fig = PE.plot_eval(res["within"], t, ANALYSIS_IMG / "photo_eval.png", meta, shared=PE.shared_duplicate_groups(d))
     console.print(f"график: {fig}; таблицы: {out}")
 
 

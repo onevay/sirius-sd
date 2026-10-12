@@ -17,8 +17,11 @@ STREAMS = env_path("SD_STREAMS", ROOT / "streams")   # имитация каме
 CYCLE_MODELS = MODELS / "cycle"                          # пакеты классификатора цикла (models/cycle/<имя>)
 PHOTO_MODELS = MODELS / "photo"
 CLASSIFIER_SPECS = env_path("SD_CLASSIFIERS", CONFIGS / "classifiers")   # спецификации классификатора (YAML)
-# метки жестов (кандидаты: затяжка, питьё, телефон…): исторически лежат в docs/review; если в каталоге меток есть свой файл — он главнее (перенос разметки из docs)
-GESTURES_CSV = (LABELS / "gesture_gt.csv") if (LABELS / "gesture_gt.csv").exists() else (DOCS / "review" / "gesture_gt.csv")
+# разметка-«ревью» в репозитории (метки жестов, визуальные метки циклов, интервалы, аудит окон): labels/review/*.csv — в git, в отличие от labels/*.csv
+REVIEW = ROOT / "labels" / "review"
+# метки жестов (кандидаты: затяжка, питьё, телефон…): если в каталоге меток (SD_LABELS) есть свой файл — он главнее
+GESTURES_CSV = (LABELS / "gesture_gt.csv") if (LABELS / "gesture_gt.csv").exists() else (REVIEW / "gesture_gt.csv")
+ANALYSIS_IMG = OUTPUTS / "analysis" / "img"              # графики аналитических команд (раньше писались в docs/img)
 
 # папки данных пользователя -> слабая (клип-уровня) метка
 WEAK_LABEL_BY_FOLDER = {"курение": "smoking", "лжекурение": "fake"}

@@ -20,7 +20,7 @@ models:
   - {id: videomae-b-k400, kind: tube, hf_repo: "MCG-NJU/videomae-base-finetuned-kinetics", hf_patterns: ["*.json", "model.safetensors"], license: CC-BY-NC-4.0, trust: official, note: "VideoMAE base K400 (есть класс smoking); только некоммерческое использование"}
 
   # ------------------------------ VLM-верификатор (крошечные модели: на CPU без NVIDIA других не потянуть) ------------------------------
-  # Основной путь — Ollama (локальный сервер, веса в %USERPROFILE%\.ollama\models, а не здесь): `sd.cmd ollama pull qwen3.5:2b-q4_K_M` (Apache-2.0, лучший из проверенных), `qwen3.5:0.8b`; см. раздел 8 ANALYSIS.md.
+  # Основной путь — Ollama (локальный сервер, веса в %USERPROFILE%\.ollama\models, а не здесь): `sd.cmd ollama pull qwen3.5:2b-q4_K_M` (Apache-2.0, лучший из проверенных), `qwen3.5:0.8b`; см. docs/REPORT.md, приложение А.
   # Ниже — веса для запуска через transformers (SmolVLM2: бесполезна на нашей задаче, оставлена для сравнения; Qwen3.5 в transformers 4.57 не поддерживается).
   - {id: smolvlm2-500m-video, kind: vlm, hf_repo: "HuggingFaceTB/SmolVLM2-500M-Video-Instruct", hf_patterns: ["*.json", "*.txt", "*.safetensors", "*.model"], license: Apache-2.0, trust: official, note: "500M, понимает видео/мульти-кадры; transformers>=4.50"}
   - {id: smolvlm2-256m-video, kind: vlm, hf_repo: "HuggingFaceTB/SmolVLM2-256M-Video-Instruct", hf_patterns: ["*.json", "*.txt", "*.safetensors", "*.model"], license: Apache-2.0, trust: official, note: "256M — самая маленькая видео-VLM"}

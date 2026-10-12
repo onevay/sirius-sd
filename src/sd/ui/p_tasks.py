@@ -541,8 +541,7 @@ def _queue() -> None:
 
 
 def render() -> None:
-    st.header("Задачи")
-    if "tasks_section" not in st.session_state:
-        st.session_state["tasks_section"] = SECTIONS[0]
-    sec = st.radio("Раздел", SECTIONS, horizontal=True, label_visibility="collapsed", key="tasks_section")
+    UC.style()
+    UC.header("Задачи", "Всё, что улучшает модель и пополняет данные: разметка → признаки → обучение → честная оценка. Тяжёлое — фоновыми задачами.")
+    sec = UC.sections(SECTIONS, "tasks_section")
     {"Разметка событий": _labeling, "Метки жестов": _gestures, "Признаки": _features, "Обучение": _training, "Результаты": _results, "Очередь задач": _queue}[sec]()
