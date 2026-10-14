@@ -18,7 +18,7 @@ import pandas as pd
 
 from .. import paths as P
 from ..realtime import sources as S
-from ..realtime.store import AlertStore
+from ..realtime.store import AlertStore, open_store
 from . import geo, media
 
 STATUS_RU = {"new": "ждёт решения", "confirmed": "подтверждена", "false": "ложная", "unsure": "не уверен"}
@@ -54,7 +54,7 @@ class Job:
 
 class WebApp:
     def __init__(self, store: AlertStore | None = None, streams: Path | None = None, data: Path | None = None, out: Path | None = None):
-        self.store = store or AlertStore()
+        self.store = store or open_store()
         self.out = Path(out) if out else P.OUTPUTS / "web"
         extra = [Path(x) for x in os.environ.get("SD_WEB_ROOTS", "").split(os.pathsep) if x]
         self.roots: dict[str, Path] = {"streams": Path(streams or P.STREAMS), "data": Path(data or P.DATA), **{f"extra{i}": p for i, p in enumerate(extra)}}

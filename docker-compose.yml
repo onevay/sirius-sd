@@ -1,6 +1,7 @@
 # Запуск проекта в изолированной среде.
 #   docker compose up --build ui                       # веб-интерфейс на http://127.0.0.1:8501 (порт опубликован ТОЛЬКО на этой машине)
 #   docker compose up app                              # интерфейс оператора на http://127.0.0.1:8502 (воркер: docker compose --profile monitor up -d monitor)
+#   SD_ADMIN_USER=admin SD_ADMIN_PASSWORD='...' docker compose up api   # API платформы http://127.0.0.1:8503/docs (вход обязателен; первый администратор — из этих переменных)
 #   docker compose run --rm cli doctor                 # проверка окружения
 #   docker compose run --rm cli recognize /app/data/курение/sm_6.mp4 --start 0 --end 30 --cycle-bundle models/cycle/cycle_v1 --photo-bundle models/photo/photo_v2
 #   docker compose --profile vlm up -d ollama          # локальный Ollama для VLM (внутри сети compose, наружу не публикуется)
@@ -18,6 +19,7 @@ x-sd-common: &sd-common
     SD_OLLAMA_URL: http://ollama:11434
     SD_THREADS: ${SD_THREADS:-2}
     HF_HUB_DISABLE_TELEMETRY: "1"
+    SD_DB_URL: ${SD_DB_URL:-} # общая БД платформы для воркера (monitor) и API; пусто — прежний SQLite-файл мониторинга
   volumes:
     - ./data:/app/data:ro # ваши записи — только чтение
     - ./data_external:/app/data_external # открытые датасеты
@@ -41,6 +43,21 @@ services:
     command: ["app", "--host", "0.0.0.0", "--port", "8502"]
     ports:
       - "127.0.0.1:8502:8502"
+
+  api:                                          # API платформы (FastAPI): http://127.0.0.1:8503/docs; БД по умолчанию — SQLite в ./outputs/platform, для нескольких узлов задайте SD_DB_URL (PostgreSQL)
+    <<: *sd-common
+    command: ["serve", "--host", "0.0.0.0", "--port", "8503"]
+    environment:
+      SD_OLLAMA_URL: http://ollama:11434
+      SD_THREADS: ${SD_THREADS:-2}
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      SD_DB_URL: ${SD_DB_URL:-}
+      SD_SECRET_KEY: ${SD_SECRET_KEY:-}      # задайте явно, если контейнеров несколько (иначе секрет создаётся в ./outputs/platform/secret.key)
+      SD_ADMIN_USER: ${SD_ADMIN_USER:-}
+      SD_ADMIN_PASSWORD: ${SD_ADMIN_PASSWORD:-}
+      SD_CORS: ${SD_CORS:-}
+    ports:
+      - "127.0.0.1:8503:8503"
 
   monitor:                                      # воркер мониторинга: docker compose --profile monitor up -d monitor
     <<: *sd-common

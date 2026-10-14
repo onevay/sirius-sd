@@ -14,6 +14,7 @@ dependencies = [
   "pyyaml", "typer", "rich", "tqdm", "imageio-ffmpeg", "matplotlib", "plotly", "streamlit",
   "torch", "torchvision", "timm", "ultralytics", "openvino", "onnxruntime", "rtmlib",
   "transformers", "huggingface-hub", "safetensors", "pillow", "psutil",
+  "fastapi", "uvicorn", "sqlalchemy", "alembic", "itsdangerous", "python-multipart",
 ]
 
 [project.optional-dependencies]
@@ -26,7 +27,7 @@ sd = "sd.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-sd = ["ui/frontend/**/*", "web/static/*"]
+sd = ["ui/frontend/**/*", "web/static/*", "server/migrations/*.py", "server/migrations/*.mako", "server/migrations/versions/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

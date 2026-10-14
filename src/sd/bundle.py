@@ -87,13 +87,14 @@ def oof_members(X: pd.DataFrame, y: np.ndarray, groups: np.ndarray, spec: dict[s
     """Out-of-fold оценки каждого члена (фолды по группам = видео). При repeats > 1 оценки усредняются по перемешиваниям."""
     out = {n: np.zeros(len(y)) for n in spec}
     cnt = np.zeros(len(y))
+    w_all = X["_w"].to_numpy(float) if "_w" in X.columns else None      # веса строк (дообучение, активное обучение): только в обучающих фолдах; MLP веса не использует
     for r in range(repeats):
         cv = StratifiedGroupKFold(n_splits=min(n_splits, len(set(groups))), shuffle=True, random_state=seed + r)
         for tr, te in cv.split(X, y, groups):
             if len(np.unique(y[tr])) < 2:
                 continue
             for n, s in spec.items():
-                st = fit_member(s["kind"], X.iloc[tr], y[tr], s["features"], seed=seed + r, **s.get("params", {}))
+                st = fit_member(s["kind"], X.iloc[tr], y[tr], s["features"], w=None if w_all is None else w_all[tr], seed=seed + r, **s.get("params", {}))
                 out[n][te] += predict_member(st, X.iloc[te])
             cnt[te] += 1
     return {n: v / np.maximum(cnt, 1) for n, v in out.items()}
@@ -109,7 +110,7 @@ def train_bundle(X: pd.DataFrame, y: np.ndarray, groups: np.ndarray, spec: dict[
     iso = IsotonicRegression(out_of_bounds="clip").fit(ens, y) if calibrate else None   # без калибровки оценка = среднее членов, как в out-of-fold: пороги, подобранные по oof, переносятся как есть
     members, boosters = {}, {}
     for n, s in spec.items():
-        st = fit_member(s["kind"], X, y, s["features"], seed=seed, **s.get("params", {}))
+        st = fit_member(s["kind"], X, y, s["features"], w=X["_w"].to_numpy(float) if "_w" in X.columns else None, seed=seed, **s.get("params", {}))
         if st["kind"] == "lgbm":
             boosters[n] = st.pop("_booster_text")
             st["file"] = f"lgbm_{n}.txt"

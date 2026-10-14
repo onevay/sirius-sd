@@ -1,4 +1,7 @@
+alembic==1.20.0
 altair==6.3.0
+annotated-doc==0.0.5
+annotated-types==0.8.0
 anyio==4.15.1
 attrs==26.1.0
 certifi==2026.7.22
@@ -10,6 +13,7 @@ coloredlogs==15.0.1
 contourpy==1.4.0
 cycler==0.12.1
 docopt==0.6.2
+fastapi==0.143.1
 filelock==4.0.12
 flatbuffers==25.12.19
 fonttools==4.66.1
@@ -31,6 +35,7 @@ jsonschema-specifications==2025.9.1
 kiwisolver==1.5.1
 lap==0.5.13
 lightgbm==4.7.0
+Mako==1.4.3
 markdown-it-py==4.2.0
 MarkupSafe==3.0.4
 matplotlib==3.10.5
@@ -43,6 +48,7 @@ numpy==2.2.6
 nvidia-ml-py==13.615.71
 onnxruntime==1.23.1
 opencv-python==4.12.0.88
+opentelemetry-api==1.45.1
 openvino==2026.4.1
 openvino-telemetry==2025.2.0
 packaging==26.3
@@ -55,6 +61,8 @@ polars-runtime-32==2.0.0
 protobuf==7.36.2
 psutil==7.2.2
 pyarrow==25.0.1
+pydantic==2.14.1
+pydantic_core==2.50.1
 pydeck==0.9.3
 Pygments==2.21.0
 pyparsing==3.3.3
@@ -76,6 +84,7 @@ scipy==1.16.1
 setuptools==84.0.0
 shellingham==1.5.4
 six==1.17.0
+SQLAlchemy==2.1.4
 starlette==1.7.0
 streamlit==1.65.0
 sympy==1.14.0
@@ -89,6 +98,7 @@ tqdm==4.70.1
 transformers==4.57.1
 typer==0.19.2
 typing_extensions==4.16.0
+typing-inspection==0.4.4
 tzdata==2026.5
 ultralytics==8.4.174
 ultralytics-platform==0.1.81
