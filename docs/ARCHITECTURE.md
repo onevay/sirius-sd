@@ -29,6 +29,8 @@
         └──► realtime.feedback ──► labels/events_gt.csv ──► обучение ──► пакет ──► решатель / выпуск
 ```
 
+Хранилище тревог в схеме — прежний SQLite-файл или (при `SD_DB_URL`) БД платформы; поверх неё работает API платформы (`sd serve`, :8503) для веба и интеграций — раздел 5.3.
+
 Схема конвейера с моделями профиля `mvp` — [img/platform/d02_pipeline.svg](img/platform/d02_pipeline.svg). Живая схема с подсветкой правок — вкладка «Конструктор» Dev Studio (`arch.dot`).
 
 ## 2. Конвейер распознавания
@@ -175,7 +177,7 @@
 
 ### 3.4. Хранилище тревог
 
-Файл — `outputs/monitor/monitor.db` (SQLite WAL, `SD_MONITOR_DB`). Пишет воркер, читает веб; это разные процессы.
+По умолчанию — файл `outputs/monitor/monitor.db` (SQLite WAL, `SD_MONITOR_DB`). Пишет воркер, читает веб; это разные процессы. При заданном `SD_DB_URL` вместо него используется БД платформы (`SqlAlertStore`, 5.3): те же операции, плюс история решений и пользователи; схема и перенос — [API.md](API.md), раздел 6–7. Таблицы ниже — прежнего хранилища.
 
 | таблица | содержимое |
 |---|---|
@@ -313,7 +315,21 @@ sd solver check mvp_v1 --mode live
 - **входа, ролей и CSRF-защиты нет**;
 - Leaflet и тайлы карты грузятся с внешних CDN.
 
-Экраны и API — [WEB_APP.md](WEB_APP.md); целевая версия на FastAPI — [PLATFORM_GUIDE.md](PLATFORM_GUIDE.md), раздел 8.
+Экраны и API — [WEB_APP.md](WEB_APP.md). Это прототип: для коммерческой версии есть бэкенд с входом и ролями (5.3), на который интерфейс предстоит перевести.
+
+### 5.3. Бэкенд платформы (`sd serve`, порт 8503)
+
+Пакет `src/sd/server` — FastAPI + SQLAlchemy 2 + Alembic. Полное описание — [API.md](API.md); здесь — место в архитектуре.
+
+```
+routers/ (system, auth, users, cameras, alerts, analysis, dev)  →  services/ (users, alerts, cameras, audit, artifacts)  →  models.py + migrations/  →  SQLite | PostgreSQL
+                                   └─ делегирует прежним модулям: web.api.WebApp, web.admin, tasks, experiments, compare, labels_history, release
+```
+
+- **Что даёт сверх прежнего приложения:** вход и роли (viewer < operator < developer < admin), API-токены, журнал действий, неизменяемую историю решений, камеры с городом и координатами, страницы и фильтры, поток обновлений SSE, доступ к функциям Dev Studio (профили, журнал прогонов, задачи, разметка, выпуски) без Streamlit.
+- **Хранилище мониторинга.** `SqlAlertStore` повторяет интерфейс `realtime.store.AlertStore`; `realtime.store.open_store()` выбирает его при заданном `SD_DB_URL`. Воркер, демо, обратная связь и прежнее приложение работают с БД платформы без правок.
+- **Схема только через миграции** (`sd db …`, цепочка `0001_identity` → `0002_monitoring`); тест следит, чтобы миграции не расходились с моделями; для PostgreSQL миграции проверены как SQL.
+- **Что не заменено:** распознавание, обучение и Dev Studio остаются в прежних модулях; интерфейс оператора (`sd app`) пока на прежних маршрутах.
 
 ## 6. Карта модулей
 
@@ -327,6 +343,7 @@ sd solver check mvp_v1 --mode live
 | профили и поставка | `config`, `profiles`, `arch`, `solver`, `release`, `models`, `model_tools`, `catalog`, `external`, `video_fetch`, `photo_fetch`, `safety`, `doctor`, `hw`, `resources` |
 | поток | `realtime/{sources, engine, scoring, worker, replay, store, feedback, demo}` |
 | интерфейсы | `cli`, `cli_dev`, `cli_photos`, `cli_solver` (Typer); `ui/*` (Streamlit); `web/*` (HTTP + SPA); `tasks`, `task_wrapper`, `proxy`, `viewdata` |
+| бэкенд платформы | `server/{app, settings, db, models, migrate, security, deps, schemas, store, legacy, cli}`, `server/services/*`, `server/routers/*`, `server/migrations/versions/*` |
 
 Каталоги данных задаются переменными `SD_DATA`, `SD_EXTERNAL`, `SD_MODELS`, `SD_OUTPUTS`, `SD_LABELS`, `SD_STREAMS`, `SD_CLASSIFIERS`, `SD_MONITOR_DB` (файл `.env`). Подробно — [OPERATIONS.md](OPERATIONS.md).
 

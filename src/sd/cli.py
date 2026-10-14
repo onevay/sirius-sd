@@ -33,6 +33,11 @@ from .cli_solver import solver_app  # noqa: E402
 
 app.add_typer(photos_app, name="photos")
 app.add_typer(solver_app, name="solver")
+from .server.cli import db_app, serve_cmd, user_app  # noqa: E402
+
+app.add_typer(db_app, name="db")
+app.add_typer(user_app, name="user")
+app.command("serve", help="API платформы (FastAPI): вход и роли, тревоги и решения, камеры, разбор видео, интерфейс разработчика. Документация — /docs.")(serve_cmd)
 from .cli_dev import register as _register_dev  # noqa: E402
 
 _register_dev(app)            # отчёт, clf, release, variants, labels — команды Dev Studio (src/sd/cli_dev.py)
@@ -1684,9 +1689,9 @@ def monitor_cmd(streams: Annotated[Optional[Path], typer.Option(help="катал
 @app.command("monitor-demo", help="Демонстрационные тревоги для разработки интерфейса оператора без моделей (помечены «ДЕМО»). --clear удаляет их.")
 def monitor_demo_cmd(n: Annotated[int, typer.Option(help="сколько тревог создать")] = 14, clear: Annotated[bool, typer.Option("--clear")] = False) -> None:
     from .realtime.demo import seed_demo
-    from .realtime.store import AlertStore
+    from .realtime.store import open_store
 
-    st = AlertStore()
+    st = open_store()
     if clear:
         console.print(f"удалено демо-тревог: {st.delete_demo()}")
         return
@@ -1696,9 +1701,9 @@ def monitor_demo_cmd(n: Annotated[int, typer.Option(help="сколько тре�
 @app.command("feedback-export", help="Решения оператора (подтверждено / ложная) → эталон событий labels/events_gt.csv: подтверждённые — POSITIVE, ложные — NEGATIVE (сложные негативы).")
 def feedback_export_cmd() -> None:
     from .realtime.feedback import export_reviewed
-    from .realtime.store import AlertStore
+    from .realtime.store import open_store
 
-    console.print(export_reviewed(AlertStore()))
+    console.print(export_reviewed(open_store()))
 
 
 @app.command("app", help="Веб-приложение оператора БЕЗ Streamlit: карта с камерами, мультипросмотр, тревоги и решения, просмотр видео с выводами модели. По умолчанию http://127.0.0.1:8502")

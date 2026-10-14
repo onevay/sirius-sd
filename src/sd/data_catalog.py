@@ -153,9 +153,9 @@ def coverage(tab: pd.DataFrame) -> pd.DataFrame:
 def feedback_status() -> dict:
     """Решения оператора (хранилище мониторинга), которые ещё не перенесены в эталон: сколько подтверждённых и ложных, сколько уже перенесено."""
     try:
-        from .realtime.store import AlertStore
+        from .realtime.store import open_store
 
-        df = AlertStore().list_alerts(status=["confirmed", "false"], limit=100000)
+        df = open_store().list_alerts(status=["confirmed", "false"], limit=100000)
     except Exception as e:          # noqa: BLE001 — базы мониторинга может не быть
         return dict(ok=False, error=str(e), confirmed=0, false=0, exported=0)
     gt = GT.load()

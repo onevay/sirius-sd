@@ -18,7 +18,7 @@ from ..paths import OUTPUTS, portable
 from ..profiles import Profile
 from . import sources as S
 from .engine import BundleScorer, HeuristicScorer, StreamEngine
-from .store import AlertStore
+from .store import AlertStore, open_store
 
 ARTIFACTS = OUTPUTS / "monitor" / "alerts"
 
@@ -146,7 +146,7 @@ def run_monitor(streams_root: str | Path, profile: Profile, store: AlertStore | 
                 speed: float = 0.0, process_fps: float | None = None, stop: threading.Event | None = None, engine_factory: Callable | None = None, log: Callable[[str], None] = print,
                 **kw) -> dict:
     """Основной цикл: найти камеры → обработать новые фрагменты → (в режиме `watch`) подождать и повторить."""
-    store = store or AlertStore()
+    store = store or open_store()
     fps = process_fps or float(profile.cfg()["video"]["process_fps"])
     engines: dict[str, StreamEngine] = {}
     total = dict(chunks=0, alerts=0, updates=0)

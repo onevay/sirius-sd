@@ -145,6 +145,9 @@ render/        pose.mp4, cycles.mp4, *_tXX.png ...                       — в�
 | `sd.cmd app [--port 8502] [--open]` | веб-приложение оператора без Streamlit: карта, мультипросмотр, тревоги, просмотр видео с выводами модели ([ARCHITECTURE.md](ARCHITECTURE.md)); `--legacy` — старый Streamlit |
 | `sd.cmd replay <клип> [-p профиль \| --solver имя] [--classifier имя] [--speed 1] [--gt] [--render]` | имитация real-time по файлу: тревоги, F1 и задержка с эталоном, пропускная способность ([ARCHITECTURE.md](ARCHITECTURE.md), раздел 4) |
 | `sd.cmd solver pack\|inspect\|install\|check\|list` | переносимый решатель `.sdsolver.zip` с метаданными архитектуры |
+| `sd.cmd serve [--host 127.0.0.1] [--port 8503] [--no-auth]` | **API платформы** (FastAPI): вход и роли, тревоги и решения, камеры, разбор видео, интерфейс разработчика; документация `/docs`; подробно — [API.md](API.md) |
+| `sd.cmd db current\|upgrade\|downgrade\|history\|revision\|stamp\|import-legacy` | схема БД платформы: миграции Alembic и перенос данных из прежней `monitor.db` ([API.md](API.md), раздел 6) |
+| `sd.cmd user create\|list\|set\|token` | пользователи API (роли viewer / operator / developer / admin) и их API-токены |
 | `sd.cmd monitor-demo [--n 14] [--clear]` | демо-тревоги (помечены «ДЕМО») для работы над интерфейсом без моделей |
 | `sd.cmd feedback-export` | решения оператора → `labels/events_gt.csv` (подтверждено → POSITIVE, ложная → NEGATIVE) |
 | `python -m sd.run --input <папка\|файл> --out preds.csv [--profile имя] [--roi roi.json] [--render каталог]` | единая команда запуска: `preds.csv` (события выше порога), `preds.all.csv`, `preds.manifest.json` |

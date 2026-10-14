@@ -93,6 +93,7 @@ def cv_predict(tab: pd.DataFrame, spec: dict, train_frac: float = 1.0, permute: 
     mem = spec["members"]
     out = {n: np.zeros(len(y)) for n in mem}
     cnt = np.zeros(len(y))
+    w_all = t["_w"].to_numpy(float) if "_w" in t.columns else None      # веса строк (дообучение): только при обучении, не при оценке
     rng = np.random.default_rng(sd + 12345)
     for r in range(int(cv["repeats"])):
         folds = StratifiedGroupKFold(n_splits=min(int(cv["n_splits"]), len(set(groups))), shuffle=True, random_state=sd + r)
@@ -110,7 +111,7 @@ def cv_predict(tab: pd.DataFrame, spec: dict, train_frac: float = 1.0, permute: 
             for c in permute:
                 Xte[c] = rng.permutation(Xte[c].to_numpy())
             for n, s in mem.items():
-                st = B.fit_member(s["kind"], t.iloc[tr], ytr, s["features"], seed=sd + r, **(s.get("params") or {}))
+                st = B.fit_member(s["kind"], t.iloc[tr], ytr, s["features"], w=None if w_all is None else w_all[tr], seed=sd + r, **(s.get("params") or {}))
                 out[n][te] += B.predict_member(st, Xte)
             cnt[te] += 1
     out = {n: v / np.maximum(cnt, 1) for n, v in out.items()}
@@ -123,7 +124,7 @@ def fit_all_scores(tab: pd.DataFrame, spec: dict) -> dict[str, np.ndarray]:
     t, y = _prepare(tab)
     out = {}
     for n, s in spec["members"].items():
-        st = B.fit_member(s["kind"], t, y, s["features"], seed=int(spec.get("cv", {}).get("seed", 0)), **(s.get("params") or {}))
+        st = B.fit_member(s["kind"], t, y, s["features"], w=t["_w"].to_numpy(float) if "_w" in t.columns else None, seed=int(spec.get("cv", {}).get("seed", 0)), **(s.get("params") or {}))
         out[n] = B.predict_member(st, t)
     out["__ensemble__"] = np.mean([out[n] for n in spec["members"]], axis=0)
     return out

@@ -36,6 +36,19 @@ def now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def open_store(path: str | Path | None = None):
+    """Хранилище мониторинга по настройкам: при заданном `SD_DB_URL` (или `path` со схемой `://`) — `sd.server.store.SqlAlertStore` (БД платформы с миграциями, пользователями и историей решений),
+    иначе прежний SQLite-файл `AlertStore`. Интерфейс у обоих один, поэтому воркер и приложение переключаются без правок."""
+    import os
+
+    url = os.environ.get("SD_DB_URL")
+    if (isinstance(path, str) and "://" in path) or (path is None and url):
+        from ..server.store import SqlAlertStore
+
+        return SqlAlertStore(path or url)
+    return AlertStore(path)
+
+
 class AlertStore:
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path else Path(os.environ.get("SD_MONITOR_DB") or DB_PATH)   # SD_MONITOR_DB — база в другом месте (общий диск, тесты)

@@ -34,7 +34,7 @@ RUN pip install --no-deps -e . && mkdir -p data data_external models outputs lab
 RUN useradd -m -u 1000 sd && chown -R sd:sd /app
 USER sd
 
-EXPOSE 8501 8502
+EXPOSE 8501 8502 8503
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s CMD python -c "import sd" || exit 1
 ENTRYPOINT ["sd"]
 CMD ["ui", "--host", "0.0.0.0", "--port", "8501"]

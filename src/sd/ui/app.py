@@ -4,6 +4,7 @@
   Валидация      — проверить конфигурацию на размеченных папках: запуск с проверкой до старта, отчёт и PDF, разбор слабых мест по кэшу, поток
   Аналитика      — сравнение подходов по журналу: метрики и скорость, клип × подход, ошибки и порог, влияние параметров, классификаторы
   Конструктор    — схема конвейера и правка любых его параметров с ценой правки; оценка без сохранения, сохранение профиля, серия вариантов
+  Лаборатория    — каждая часть конвейера отдельно на клипе по кэшу позы, модели по временным рядам, подбор классификатора, дообучение, активное обучение
   Задачи         — разметка событий и жестов, признаки, обучение классификатора (диагностика, пакет), результаты, очередь фоновых задач
   Данные         — каталог видео, проблемы данных, версии разметки с откатом, метки циклов, решения оператора → эталон
   Модели         — профили, реестр весов, свои модели, перенос
@@ -17,13 +18,14 @@ import sd._env  # noqa: F401,E402
 
 import streamlit as st
 
-from sd.ui import nav, p_analytics, p_data, p_designer, p_models, p_profiling, p_release, p_tasks, p_validation
+from sd.ui import nav, p_analytics, p_data, p_designer, p_lab, p_models, p_profiling, p_release, p_tasks, p_validation
 
 st.set_page_config(page_title="Dev Studio · детекция курения", layout="wide", page_icon="🧪")
 nav.PAGES.update(
     validation=st.Page(p_validation.render, title="Валидация", url_path="validation", default=True, icon=":material/fact_check:"),
     analytics=st.Page(p_analytics.render, title="Аналитика", url_path="analytics", icon=":material/insights:"),
     designer=st.Page(p_designer.render, title="Конструктор", url_path="designer", icon=":material/account_tree:"),
+    lab=st.Page(p_lab.render, title="Лаборатория", url_path="lab", icon=":material/science:"),
     tasks=st.Page(p_tasks.render, title="Задачи", url_path="tasks", icon=":material/construction:"),
     data=st.Page(p_data.render, title="Данные", url_path="data", icon=":material/database:"),
     models=st.Page(p_models.render, title="Модели", url_path="models", icon=":material/deployed_code:"),

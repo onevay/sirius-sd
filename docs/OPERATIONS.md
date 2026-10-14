@@ -34,6 +34,11 @@ python scripts/bootstrap.py --minimal --dev        # лёгкое ядро БЕ�
 | `SD_LABELS` | `labels/` | разметка (`events_gt.csv`, `cycle_labels.csv`) |
 | `SD_STREAMS` | `streams/` | имитация камер для мониторинга |
 | `SD_MONITOR_DB` | `$SD_OUTPUTS/monitor/monitor.db` | база тревог (например, общий диск для воркера и приложения) |
+| `SD_DB_URL` | SQLite `outputs/platform/platform.db` | БД платформы (API, воркер, приложение): SQLAlchemy-URL; PostgreSQL — `postgresql+psycopg://…`. Подробно — [API.md](API.md) |
+| `SD_SECRET_KEY` | создаётся в `outputs/platform/secret.key` | секрет подписи токенов API; при нескольких экземплярах задайте явно |
+| `SD_AUTH` | `on` | `off` — API без входа (только привязка к 127.0.0.1) |
+| `SD_TOKEN_TTL_MIN`, `SD_CORS`, `SD_API_DOCS` | 720, пусто, 1 | срок токена в минутах, разрешённые источники браузера, показ `/docs` |
+| `SD_ADMIN_USER`, `SD_ADMIN_PASSWORD` | — | создать администратора API при старте, если пользователей нет |
 | `SD_OLLAMA_URL` | `http://127.0.0.1:11434` | локальный Ollama для VLM |
 | `SD_PROXY_CODEC` | `h264` | `vp8` — копии видео для браузеров без H.264 |
 | `SD_THREADS` | — | число потоков вычислений |
@@ -68,6 +73,7 @@ Lock-файл `requirements.lock.txt` снят на Windows; платформе�
 docker compose build                                   # один раз (≈ 10–15 мин; сеть нужна только здесь и для весов)
 docker compose up ui                                   # Dev Studio: http://127.0.0.1:8501
 docker compose up app                                  # приложение оператора: http://127.0.0.1:8502
+SD_ADMIN_USER=admin SD_ADMIN_PASSWORD='...' docker compose up api   # API платформы: http://127.0.0.1:8503/docs (БД — SD_DB_URL, см. API.md)
 docker compose --profile monitor up -d monitor         # воркер потока
 docker compose run --rm cli doctor                     # проверка окружения
 docker compose run --rm cli models get all             # веса в ./models
