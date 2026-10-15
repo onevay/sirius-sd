@@ -9,10 +9,10 @@ python scripts/bootstrap.py --minimal --dev        # лёгкое ядро БЕ�
 
 | ОС | запуск команд | интерфейсы |
 |---|---|---|
-| Windows | `sd.cmd <команда>` | `sd.cmd ui` (разработчик, :8501), `sd.cmd app` (оператор, :8502) |
+| Windows | `sd.cmd <команда>` | `sd.cmd ui` (Dev Studio, :8501), `sd.cmd app` (веб-приложение, :8502, `/app/`) |
 | Linux / macOS | `./sd.sh <команда>` или `make <цель>` | то же; `make help` — список целей |
 | любая, окружение активировано | `sd <команда>` или `python -m sd <команда>` | |
-| контейнер | `docker compose up ui` / `up app` / `--profile monitor up -d monitor` | порты опубликованы только на 127.0.0.1 |
+| контейнер | `docker compose up ui` / `up web` / `--profile monitor up -d monitor` | порты опубликованы только на 127.0.0.1 |
 
 `make`: `setup`, `setup-min`, `ui`, `app`, `monitor`, `test`, `doctor`. Обёртки `sd.cmd`/`sd.sh` сами выбирают `.venv` проекта и выставляют `PYTHONUTF8`, `OPENCV_FFMPEG_LOGLEVEL` (без них FFmpeg засыпает консоль сообщениями).
 
@@ -30,11 +30,10 @@ python scripts/bootstrap.py --minimal --dev        # лёгкое ядро БЕ�
 | `SD_DATA` | `data/` | ваши записи: папки `курение/`, `лжекурение/`, … |
 | `SD_EXTERNAL` | `data_external/` | открытые датасеты |
 | `SD_MODELS` | `models/` | веса, пакеты, кэш HF и OpenVINO |
-| `SD_OUTPUTS` | `outputs/` | кэши позы, прогоны, журнал экспериментов, база мониторинга, копии видео |
+| `SD_OUTPUTS` | `outputs/` | кэши позы, прогоны, журнал экспериментов, БД платформы (`platform/platform.db`), копии видео |
 | `SD_LABELS` | `labels/` | разметка (`events_gt.csv`, `cycle_labels.csv`) |
 | `SD_STREAMS` | `streams/` | имитация камер для мониторинга |
-| `SD_MONITOR_DB` | `$SD_OUTPUTS/monitor/monitor.db` | база тревог (например, общий диск для воркера и приложения) |
-| `SD_DB_URL` | SQLite `outputs/platform/platform.db` | БД платформы (API, воркер, приложение): SQLAlchemy-URL; PostgreSQL — `postgresql+psycopg://…`. Подробно — [API.md](API.md) |
+| `SD_DB_URL` | SQLite `outputs/platform/platform.db` | БД платформы — одна на веб-приложение, воркер, демо и Dev Studio (общий диск или сервер БД — для нескольких машин): SQLAlchemy-URL; PostgreSQL — `postgresql+psycopg://…`. Подробно — [API.md](API.md) |
 | `SD_SECRET_KEY` | создаётся в `outputs/platform/secret.key` | секрет подписи токенов API; при нескольких экземплярах задайте явно |
 | `SD_AUTH` | `on` | `off` — API без входа (только привязка к 127.0.0.1) |
 | `SD_TOKEN_TTL_MIN`, `SD_CORS`, `SD_API_DOCS` | 720, пусто, 1 | срок токена в минутах, разрешённые источники браузера, показ `/docs` |
@@ -72,9 +71,8 @@ Lock-файл `requirements.lock.txt` снят на Windows; платформе�
 ```bash
 docker compose build                                   # один раз (≈ 10–15 мин; сеть нужна только здесь и для весов)
 docker compose up ui                                   # Dev Studio: http://127.0.0.1:8501
-docker compose up app                                  # приложение оператора: http://127.0.0.1:8502
-SD_ADMIN_USER=admin SD_ADMIN_PASSWORD='...' docker compose up api   # API и веб-интерфейс платформы: http://127.0.0.1:8503/app/ (документация API — /docs, БД — SD_DB_URL, см. API.md и WEB_UI.md)
-docker compose --profile monitor up -d monitor         # воркер потока
+SD_ADMIN_USER=admin SD_ADMIN_PASSWORD='...' docker compose up web   # веб-приложение и API: http://127.0.0.1:8503/app/ (документация API — /docs); вход обязателен, БД — SD_DB_URL, см. API.md и WEB_UI.md
+docker compose --profile monitor up -d monitor         # воркер потока (пишет в ту же БД платформы, тревоги сразу видны в приложении)
 docker compose run --rm cli doctor                     # проверка окружения
 docker compose run --rm cli models get all             # веса в ./models
 docker compose run --rm cli recognize "/app/data/курение/sm_6.mp4" --start 0 --end 30     --cycle-bundle models/cycle/cycle_mvp              # результат: ./outputs/recognize/…
@@ -127,5 +125,5 @@ docker compose exec ollama ollama pull qwen3.5:2b-q4_K_M
 | Консоль засыпана `non-existing SPS …` | запуск мимо обёртки; используйте `sd.cmd` / `sd.sh` / `python -m sd` (он сам перезапускается с нужным окружением) |
 | Видео в браузере чёрное | у браузера нет H.264 — `SD_PROXY_CODEC=vp8` |
 | «файл эталона занят другим процессом» | разметчик и `feedback-export` пишут один файл по очереди; замок снимается сам через 60 с, если процесс упал |
-| Интерфейс не видит правок кода | `sd ui`/`sd app` запускаются без наблюдателя файлов — перезапустите процесс |
-| Порт занят | `sd ui --port 8511`, `sd app --port 8512` |
+| Интерфейс не видит правок кода | `sd ui` запускается без наблюдателя файлов, `sd app` / `sd serve` — без `--reload` (его даёт только `sd serve --reload`): перезапустите процесс |
+| Порт занят | `sd ui --port 8511`, `sd app --port 8512`, `sd serve --port 8513` |

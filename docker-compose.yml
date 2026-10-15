@@ -1,7 +1,7 @@
 # Запуск проекта в изолированной среде.
 #   docker compose up --build ui                       # веб-интерфейс на http://127.0.0.1:8501 (порт опубликован ТОЛЬКО на этой машине)
-#   docker compose up app                              # интерфейс оператора на http://127.0.0.1:8502 (воркер: docker compose --profile monitor up -d monitor)
-#   SD_ADMIN_USER=admin SD_ADMIN_PASSWORD='...' docker compose up api   # API платформы http://127.0.0.1:8503/docs (вход обязателен; первый администратор — из этих переменных)
+#   SD_ADMIN_USER=admin SD_ADMIN_PASSWORD='...' docker compose up web   # веб-приложение http://127.0.0.1:8503/app/ (API — /docs); вход обязателен, первый администратор — из этих переменных
+#                                                      # воркер мониторинга: docker compose --profile monitor up -d monitor (пишет в ту же БД платформы)
 #   docker compose run --rm cli doctor                 # проверка окружения
 #   docker compose run --rm cli recognize /app/data/курение/sm_6.mp4 --start 0 --end 30 --cycle-bundle models/cycle/cycle_v1 --photo-bundle models/photo/photo_v2
 #   docker compose --profile vlm up -d ollama          # локальный Ollama для VLM (внутри сети compose, наружу не публикуется)
@@ -19,7 +19,7 @@ x-sd-common: &sd-common
     SD_OLLAMA_URL: http://ollama:11434
     SD_THREADS: ${SD_THREADS:-2}
     HF_HUB_DISABLE_TELEMETRY: "1"
-    SD_DB_URL: ${SD_DB_URL:-} # общая БД платформы для воркера (monitor) и API; пусто — прежний SQLite-файл мониторинга
+    SD_DB_URL: ${SD_DB_URL:-} # БД платформы (воркер, веб-приложение, Dev Studio); пусто — SQLite-файл ./outputs/platform/platform.db, общий для всех контейнеров
   volumes:
     - ./data:/app/data:ro # ваши записи — только чтение
     - ./data_external:/app/data_external # открытые датасеты
@@ -38,13 +38,7 @@ services:
     ports:
       - "127.0.0.1:8501:8501" # не 0.0.0.0: интерфейс не должен быть виден из сети
 
-  app:                                          # интерфейс оператора (мониторинг): http://127.0.0.1:8502
-    <<: *sd-common
-    command: ["app", "--host", "0.0.0.0", "--port", "8502"]
-    ports:
-      - "127.0.0.1:8502:8502"
-
-  api:                                          # API платформы (FastAPI): http://127.0.0.1:8503/docs; БД по умолчанию — SQLite в ./outputs/platform, для нескольких узлов задайте SD_DB_URL (PostgreSQL)
+  web:                                          # веб-приложение и API платформы (FastAPI): http://127.0.0.1:8503/app/, документация API — /docs; для нескольких узлов задайте SD_DB_URL (PostgreSQL)
     <<: *sd-common
     command: ["serve", "--host", "0.0.0.0", "--port", "8503"]
     environment:

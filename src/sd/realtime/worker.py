@@ -16,9 +16,9 @@ from typing import Callable, Iterable
 
 from ..paths import OUTPUTS, portable
 from ..profiles import Profile
+from ..server.store import SqlAlertStore
 from . import sources as S
 from .engine import BundleScorer, HeuristicScorer, StreamEngine
-from .store import AlertStore, open_store
 
 ARTIFACTS = OUTPUTS / "monitor" / "alerts"
 
@@ -69,7 +69,7 @@ def _chunk_for(spans: list[Span], t: float) -> Span | None:
     return spans[0] if spans else None
 
 
-def process_stream(stream: S.StreamDir, store: AlertStore, engine: StreamEngine, profile: Profile, *, process_fps: float = 10.0, speed: float = 0.0,
+def process_stream(stream: S.StreamDir, store: SqlAlertStore, engine: StreamEngine, profile: Profile, *, process_fps: float = 10.0, speed: float = 0.0,
                    frames_fn: Callable = S.iter_chunk_frames, probe_fn: Callable | None = None, stop: threading.Event | None = None, finalize: bool = True,
                    demo: bool = False, artifacts_dir: Path | None = None, log: Callable[[str], None] = print) -> dict:
     """Обрабатывает необработанные фрагменты одной камеры. Возвращает {chunks, alerts, updates, seconds}."""
@@ -142,11 +142,11 @@ def process_stream(stream: S.StreamDir, store: AlertStore, engine: StreamEngine,
     return res
 
 
-def run_monitor(streams_root: str | Path, profile: Profile, store: AlertStore | None = None, *, cameras: Iterable[str] | None = None, watch: bool = False, interval: float = 5.0,
+def run_monitor(streams_root: str | Path, profile: Profile, store: SqlAlertStore | None = None, *, cameras: Iterable[str] | None = None, watch: bool = False, interval: float = 5.0,
                 speed: float = 0.0, process_fps: float | None = None, stop: threading.Event | None = None, engine_factory: Callable | None = None, log: Callable[[str], None] = print,
                 **kw) -> dict:
     """Основной цикл: найти камеры → обработать новые фрагменты → (в режиме `watch`) подождать и повторить."""
-    store = store or open_store()
+    store = store or SqlAlertStore()
     fps = process_fps or float(profile.cfg()["video"]["process_fps"])
     engines: dict[str, StreamEngine] = {}
     total = dict(chunks=0, alerts=0, updates=0)

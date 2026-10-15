@@ -1,27 +1,26 @@
-"""Логика веб-приложения (без HTTP — тестируется напрямую): камеры и карта, видео из папок, тревоги и решения оператора, фоновый анализ видео моделью."""
+"""Видео и разбор моделью: источники (папки камер и данных, загрузка из браузера), воспроизведение, фоновый разбор видео по профилю, результаты разбора и список пригодных профилей.
+Без HTTP — тестируется напрямую; маршруты — `routers/analysis.py`."""
 from __future__ import annotations
 
 import base64
 import hashlib
 import json
 import os
-import re
 import queue
+import re
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
-from .. import paths as P
-from ..realtime import sources as S
-from ..realtime.store import AlertStore, open_store
-from . import geo, media
-
-STATUS_RU = {"new": "ждёт решения", "confirmed": "подтверждена", "false": "ложная", "unsure": "не уверен"}
+from ... import paths as P
+from ...realtime import sources as S
+from .. import media
+from ..store import SqlAlertStore
+from .artifacts import confined
 
 
 class NotFound(KeyError):
@@ -52,19 +51,16 @@ class Job:
                     stats=self.stats, metrics=self.metrics, notes=self.notes)
 
 
-class WebApp:
-    def __init__(self, store: AlertStore | None = None, streams: Path | None = None, data: Path | None = None, out: Path | None = None):
-        self.store = store or open_store()
+class VideoService:
+    def __init__(self, store: SqlAlertStore | None = None, streams: Path | None = None, data: Path | None = None, out: Path | None = None):
+        self.store = store or SqlAlertStore()
         self.out = Path(out) if out else P.OUTPUTS / "web"
         extra = [Path(x) for x in os.environ.get("SD_WEB_ROOTS", "").split(os.pathsep) if x]
         self.roots: dict[str, Path] = {"streams": Path(streams or P.STREAMS), "data": Path(data or P.DATA), **{f"extra{i}": p for i, p in enumerate(extra)}}
-        self.allow_fs = True                     # добавление папок и загрузка файлов: только для локального сервера (server.serve выставляет по адресу привязки)
+        self.allow_fs = True                     # добавление папок и загрузка файлов: только для локального сервера (`Ctx.videos` выставляет по настройке `allow_fs`)
         self._roots_file = self.out / "roots.json"
         for r in self._load_roots():
             self.roots[r["key"]] = Path(r["path"])
-        from .tuning import Tuning
-
-        self.tuning = Tuning(self)
         self.jobs: dict[str, Job] = {}
         self._q: queue.Queue = queue.Queue()
         self._worker: threading.Thread | None = None
@@ -142,7 +138,10 @@ class WebApp:
         return dict(id=self.fid(dst), name=dst.name, folder=self.fid(d), **self.info(dst))
 
     def media_for_alert(self, alert_id: int, fmt: str | None = None) -> dict:
-        p = self.artifact(alert_id, "clip")
+        a = self.store.get(alert_id)
+        p = confined((a or {}).get("clip"))
+        if p is None:
+            raise NotFound("нет файла")
         return media.playable(p, fmt, float(self.info(p).get("duration") or 0.0))
 
     # ------------------------------------------------------------------ идентификаторы файлов (путь не уходит в браузер; выход за корни невозможен)
@@ -174,7 +173,7 @@ class WebApp:
         key = (str(path), st.st_size, st.st_mtime_ns)
         if key not in self._dur:
             try:
-                from ..video_io import probe
+                from ...video_io import probe
 
                 i = probe(path)
                 self._dur[key] = dict(duration=i.duration, fps=i.fps, width=i.width, height=i.height, codec=i.codec)
@@ -215,139 +214,11 @@ class WebApp:
         p = self.resolve(vid)
         return media.playable(p, fmt, float(self.info(p).get("duration") or 0.0))
 
-    def warm_media(self, fmt: str = "h264", pause: float = 0.5) -> int:
-        """Заранее готовит копии для браузера всех видео, которые он не играет напрямую (wmv, mkv, H.265): по одной, в фоне. Первый просмотр такого видео иначе ждал бы минуты перекодирования
-        с пустым экраном. Возвращает число подготовленных копий."""
-        import time as _t
-
-        n = 0
-        for f in self.folders():
-            for v in self.videos(f["id"]):
-                try:
-                    st = self.media_for(v["id"], fmt)
-                    while st["state"] == "preparing":
-                        _t.sleep(pause)
-                        st = self.media_for(v["id"], fmt)
-                    n += st["state"] == "ready"
-                except Exception:
-                    continue
-        return n
-
-    # ------------------------------------------------------------------ камеры (карта)
-    def camera_metrics(self, hours: float = 0.0) -> dict[str, dict]:
-        """Показатели по камерам за период (0 — за всё время): тревог, в час, суммарное время курения, средняя уверенность, время реакции оператора, активность относительно самой активной камеры."""
-        since = (datetime.now() - timedelta(hours=hours)).isoformat(timespec="seconds") if hours else None
-        df = self.store.list_alerts(since=since, limit=20000)
-        out: dict[str, dict] = {}
-        if len(df):
-            df = df.assign(dur=(df.end_sec - df.start_sec).clip(lower=0))
-            span = hours or max(1.0, (pd.to_datetime(df.t_abs).max() - pd.to_datetime(df.t_abs).min()).total_seconds() / 3600)
-            for cid, g in df.groupby("camera_id"):
-                rv = g[g.reviewed_at.notna()]
-                react = (pd.to_datetime(rv.reviewed_at) - pd.to_datetime(rv.t_raised)).dt.total_seconds().median() if len(rv) else None
-                out[cid] = dict(alerts=int(len(g)), per_hour=round(len(g) / span, 2), smoke_sec=round(float(g.dur.sum()), 1), avg_conf=round(float(g.confidence.mean()), 3),
-                                reaction_sec=None if react is None or react != react else round(float(react), 1), pending=int((g.status == "new").sum()))
-            top = max(v["alerts"] for v in out.values())
-            for v in out.values():
-                v["activity_rel"] = round(v["alerts"] / top, 3)
-        return out
-
-    def cameras(self, hours: float = 0.0) -> list[dict]:
-        metrics = self.camera_metrics(hours)
-        rows = self._cameras()
-        for c in rows:
-            m = metrics.get(c["camera_id"]) or dict(alerts=0, per_hour=0.0, smoke_sec=0.0, avg_conf=None, reaction_sec=None, pending=0, activity_rel=0.0)
-            c["m"] = m
-            c["pending_period"] = m["pending"]
-            c["notice"] = (dict(title="Нет видео", reason="в папке камеры нет фрагментов") if not c["n_chunks"] and not c["alerts"] else
-                           dict(title="Камера ещё не обрабатывалась", reason="воркер не запускался: sd monitor") if c["n_chunks"] and not c["processed_sec"] and not c["alerts"] else
-                           dict(title="Низкая уверенность модели", reason=f"средняя {round(m['avg_conf'] * 100)}% при {m['alerts']} тревогах") if m["avg_conf"] is not None and m["alerts"] >= 3 and m["avg_conf"] < 0.55 else None)
-        return rows
-
-    def _cameras(self) -> list[dict]:
-        ov = geo.load_overrides(self.roots["streams"])
-        known = {r["camera_id"]: r for r in self.store.cameras().to_dict("records")}
-        out, seen = [], set()
-        for s in S.scan_streams(self.roots["streams"]):
-            seen.add(s.camera_id)
-            ch = S.list_chunks(s.path)
-            k = known.get(s.camera_id, {})
-            out.append(dict(camera_id=s.camera_id, district=s.district, index=s.index, start=s.start.isoformat(timespec="seconds"), n_chunks=len(ch), folder=self.fid(s.path),
-                            status=k.get("status") or "idle", processed_sec=k.get("processed_sec") or 0.0, alerts=k.get("alerts") or 0, pending=k.get("pending") or 0,
-                            **geo.locate(s.district, s.index, ov)))
-        for cid, k in known.items():          # камеры из базы без папки (демо-тревоги, перенесённые данные)
-            if cid not in seen:
-                out.append(dict(camera_id=cid, district=k["district"], index=k["cam_index"], start=k["start_at"], n_chunks=0, folder=None, status=k.get("status") or "idle",
-                                processed_sec=k.get("processed_sec") or 0.0, alerts=k.get("alerts") or 0, pending=k.get("pending") or 0, **geo.locate(k["district"], k["cam_index"], ov)))
-        return out
-
-    def camera(self, camera_id: str) -> dict:
-        for c in self._cameras():
-            if c["camera_id"] == camera_id:
-                c = dict(c)
-                c["chunks"] = self.videos(c["folder"]) if c["folder"] else []
-                return c
-        raise NotFound(camera_id)
-
-    # ------------------------------------------------------------------ тревоги
-    def alerts(self, status=None, camera=None, district=None, min_conf=None, limit=100, since=None) -> list[dict]:
-        df = self.store.list_alerts(status=status or None, cameras=[camera] if camera else None, districts=[district] if district else None, min_conf=min_conf, limit=limit, since=since)
-        return [self._alert(a) for a in df.to_dict("records")] if len(df) else []
-
-    def _alert(self, a: dict) -> dict:
-        a = {k: (None if (isinstance(v, float) and v != v) else v) for k, v in a.items()}
-        a["status_ru"] = STATUS_RU.get(a["status"], a["status"])
-        a["has_thumb"] = bool(self._artifact(a.get("thumb")))
-        a["has_clip"] = bool(self._artifact(a.get("clip")))
-        return a
-
-    def _artifact(self, portable_path) -> Path | None:
-        p = P.from_portable(portable_path) if portable_path else None
-        if p and Path(p).exists():
-            try:
-                Path(p).resolve().relative_to(P.OUTPUTS.resolve())
-                return Path(p)
-            except ValueError:
-                return None
-        return None
-
-    def alert(self, alert_id: int) -> dict:
-        a = self.store.get(alert_id)
-        if not a:
-            raise NotFound(f"тревога {alert_id}")
-        return self._alert(a)
-
-    def artifact(self, alert_id: int, kind: str) -> Path:
-        a = self.store.get(alert_id)
-        p = self._artifact((a or {}).get("thumb" if kind == "thumb" else "clip"))
-        if not p:
-            raise NotFound("нет файла")
-        return p
-
-    def review(self, alert_id: int, status: str, reviewer: str = "", note: str = "") -> dict:
-        self.alert(alert_id)
-        self.store.review(alert_id, status, reviewer, note)
-        return self.alert(alert_id)
-
-    def stats(self) -> dict:
-        s = self.store.stats()
-        s["max_id"] = self.store.max_id()
-        return s
-
-    def journal_csv(self) -> str:
-        df = self.store.list_alerts(status=["confirmed", "false", "unsure"], limit=5000)
-        return df[["id", "t_abs", "district", "cam_index", "confidence", "status", "reviewer", "reviewed_at", "note", "demo"]].to_csv(index=False) if len(df) else "id\n"
-
-    def demo(self, clear: bool = False) -> int:
-        from ..realtime.demo import seed_demo
-
-        return self.store.delete_demo() if clear else seed_demo(self.store)
-
     # ------------------------------------------------------------------ анализ видео моделью
     def journal_configs(self) -> list[dict]:
         """Конфигурации, по которым уже считалась оценка (журнал `outputs/experiments`): по одной на отпечаток профиля (последний прогон), с качеством на клипах. Профиль восстанавливается
         из журнала целиком (конфиг + опции), поэтому выбрать можно и вариант, который не сохранён файлом (например, запущенный с `-s video.process_fps=10`)."""
-        from .. import experiments as XP
+        from ... import experiments as XP
 
         out: dict[str, dict] = {}
         base = XP.EXP_DIR
@@ -370,8 +241,8 @@ class WebApp:
         return list(out.values())
 
     def _profile_from_journal(self, rid: str):
-        from .. import experiments as XP
-        from .. import profiles as PR
+        from ... import experiments as XP
+        from ... import profiles as PR
 
         f = XP.EXP_DIR / rid / "meta.json"
         if not f.exists():
@@ -381,8 +252,8 @@ class WebApp:
 
     def profiles(self) -> list[dict]:
         """Профили из файлов, установленные решатели и конфигурации из журнала оценок (`run:<id>`). Каждой, по которой считалась оценка, приложено качество (`quality`)."""
-        from .. import profiles as PR
-        from .. import solver as SV
+        from ... import profiles as PR
+        from ... import solver as SV
 
         journal = self.journal_configs()
         by_fp = {c["fingerprint"]: c for c in journal}
@@ -460,8 +331,8 @@ class WebApp:
 
         import cv2
 
-        from ..realtime.replay import _annotate
-        from ..video_io import FFmpegWriter, choose_stride, iter_frames, probe
+        from ...realtime.replay import _annotate
+        from ...video_io import FFmpegWriter, choose_stride, iter_frames, probe
 
         a = self.latest_analysis(vid, profile)
         if not a:
@@ -507,7 +378,7 @@ class WebApp:
                 writer.close()
         if not out.exists() or out.stat().st_size == 0:
             raise RuntimeError("не удалось записать видео")
-        return dict(name=out.name, path=str(out), url=f"/media/export/{out.name}", size_mb=round(out.stat().st_size / 1e6, 1))
+        return dict(name=out.name, size_mb=round(out.stat().st_size / 1e6, 1))
 
     def export_path(self, name: str) -> Path:
         p = (self.out / "exports" / name).resolve()
@@ -557,8 +428,8 @@ class WebApp:
             self.run_job(j)
 
     def load_profile(self, name: str):
-        from .. import profiles as PR
-        from .. import solver as SV
+        from ... import profiles as PR
+        from ... import solver as SV
 
         if name.startswith("run:"):
             return self._profile_from_journal(name[4:])
@@ -568,9 +439,9 @@ class WebApp:
     engine_factory = None        # тесты и встраивание: (профиль, clip_id, fps) -> StreamEngine вместо реальных моделей
 
     def _run_job(self, j: Job) -> None:
-        from .. import gt as GT
-        from .. import solver as SV
-        from ..realtime import replay as RP
+        from ... import gt as GT
+        from ... import solver as SV
+        from ...realtime import replay as RP
 
         j.state = "running"
         try:

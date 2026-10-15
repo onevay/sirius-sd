@@ -25,39 +25,19 @@
       "port": 8501
     },
     {
-      "name": "streamlit-ui-8502",
-      "runtimeExecutable": "python",
-      "runtimeArgs": [
-        "-m",
-        "streamlit",
-        "run",
-        "src/sd/ui/app.py",
-        "--server.port",
-        "8502",
-        "--server.address",
-        "127.0.0.1",
-        "--server.headless",
-        "true",
-        "--server.fileWatcherType",
-        "none",
-        "--server.enableStaticServing",
-        "true",
-        "--browser.gatherUsageStats",
-        "false"
-      ],
-      "port": 8502
-    },
-    {
-      "name": "operator-web",
-      "runtimeExecutable": "python",
+      "name": "web-app",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": [
         "-m",
         "sd",
         "app",
         "--port",
-        "8503"
+        "8502",
+        "--log-level",
+        "info"
       ],
-      "port": 8503
+      "port": 8502,
+      "url": "http://127.0.0.1:8502"
     },
     {
       "name": "dev-studio-8504",

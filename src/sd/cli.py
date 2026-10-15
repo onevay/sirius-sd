@@ -33,11 +33,12 @@ from .cli_solver import solver_app  # noqa: E402
 
 app.add_typer(photos_app, name="photos")
 app.add_typer(solver_app, name="solver")
-from .server.cli import db_app, serve_cmd, user_app  # noqa: E402
+from .server.cli import app_cmd, db_app, serve_cmd, user_app  # noqa: E402
 
 app.add_typer(db_app, name="db")
 app.add_typer(user_app, name="user")
-app.command("serve", help="API платформы (FastAPI): вход и роли, тревоги и решения, камеры, разбор видео, интерфейс разработчика. Документация — /docs.")(serve_cmd)
+app.command("app", help="Веб-приложение для этого компьютера: обзор, тревоги и решения, карта, отчёты, разбор видео, эксперименты, администрирование. Без входа; по умолчанию http://127.0.0.1:8502/app/")(app_cmd)
+app.command("serve", help="Сервер платформы (FastAPI): веб-интерфейс /app/ и API /api/v1 с входом и ролями; можно из сети. Документация API — /docs.")(serve_cmd)
 from .cli_dev import register as _register_dev  # noqa: E402
 
 _register_dev(app)            # отчёт, clf, release, variants, labels — команды Dev Studio (src/sd/cli_dev.py)
@@ -1653,7 +1654,7 @@ def ui(port: int = 8501, headless: bool = True,
     raise typer.Exit(subprocess.call(cmd, cwd=str(ROOT)))
 
 
-@app.command("monitor", help="Мониторинг (real-time контур): камеры = папки <район>-<индекс>-<время начала> в --streams; тревоги пишутся в outputs/monitor/monitor.db, смотреть — `sd app`. "
+@app.command("monitor", help="Мониторинг (real-time контур): камеры = папки <район>-<индекс>-<время начала> в --streams; тревоги пишутся в БД платформы (SD_DB_URL, по умолчанию outputs/platform/platform.db), смотреть — `sd app`. "
                             "--watch следит за папками и подхватывает новые фрагменты; --speed 1 — в реальном времени, 0 — как можно быстрее.")
 def monitor_cmd(streams: Annotated[Optional[Path], typer.Option(help="каталог с папками-камерами (по умолчанию SD_STREAMS или ./streams)")] = None,
                 profile: Annotated[Optional[str], typer.Option("--profile", "-p", help="профиль моделей (configs/experiments); по умолчанию default")] = None,
@@ -1689,9 +1690,9 @@ def monitor_cmd(streams: Annotated[Optional[Path], typer.Option(help="катал
 @app.command("monitor-demo", help="Демонстрационные тревоги для разработки интерфейса оператора без моделей (помечены «ДЕМО»). --clear удаляет их.")
 def monitor_demo_cmd(n: Annotated[int, typer.Option(help="сколько тревог создать")] = 14, clear: Annotated[bool, typer.Option("--clear")] = False) -> None:
     from .realtime.demo import seed_demo
-    from .realtime.store import open_store
+    from .server.store import SqlAlertStore
 
-    st = open_store()
+    st = SqlAlertStore()
     if clear:
         console.print(f"удалено демо-тревог: {st.delete_demo()}")
         return
@@ -1701,23 +1702,9 @@ def monitor_demo_cmd(n: Annotated[int, typer.Option(help="сколько тре�
 @app.command("feedback-export", help="Решения оператора (подтверждено / ложная) → эталон событий labels/events_gt.csv: подтверждённые — POSITIVE, ложные — NEGATIVE (сложные негативы).")
 def feedback_export_cmd() -> None:
     from .realtime.feedback import export_reviewed
-    from .realtime.store import open_store
+    from .server.store import SqlAlertStore
 
-    console.print(export_reviewed(open_store()))
-
-
-@app.command("app", help="Веб-приложение оператора БЕЗ Streamlit: карта с камерами, мультипросмотр, тревоги и решения, просмотр видео с выводами модели. По умолчанию http://127.0.0.1:8502")
-def app_cmd(port: int = 8502, host: Annotated[str, typer.Option(help="адрес привязки; в контейнере 0.0.0.0")] = "127.0.0.1",
-            open_browser: Annotated[bool, typer.Option("--open/--no-open", help="открыть браузер")] = False) -> None:
-    from .web.server import serve
-
-    url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '') else host}:{port}"
-    console.print(f"веб-приложение: [bold]{url}[/]  (Ctrl+C — остановить)")
-    if open_browser:
-        import webbrowser
-
-        webbrowser.open(url)
-    serve(host=host, port=port)
+    console.print(export_reviewed(SqlAlertStore()))
 
 
 @app.command("replay", help="Имитация реального времени по видео: файл идёт через потоковый движок кадр за кадром, тревоги печатаются в момент срабатывания. "

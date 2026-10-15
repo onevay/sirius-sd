@@ -11,7 +11,7 @@ setup-min:       ## лёгкое ядро без torch/ultralytics (оценка
 	python3 scripts/bootstrap.py --minimal --dev
 ui:              ## интерфейс разработчика: http://localhost:8501
 	$(SD) ui
-app:             ## интерфейс оператора (мониторинг): http://localhost:8502
+app:             ## веб-приложение (интерфейс оператора и разработчика, без входа): http://localhost:8502/app/
 	$(SD) app
 monitor:         ## воркер: имитация камер из SD_STREAMS → тревоги в базу
 	$(SD) monitor --watch

@@ -28,6 +28,11 @@ def sqlite_url(path: str | Path) -> str:
     return URL.create("sqlite", database=str(path)).render_as_string(hide_password=False)
 
 
+def default_db_url() -> str:
+    """БД по настройке `SD_DB_URL`, иначе SQLite-файл платформы. Одна и та же для API, воркера (`sd monitor`) и Dev Studio, поэтому они видят одни и те же тревоги."""
+    return os.environ.get("SD_DB_URL") or sqlite_url(PLATFORM_DIR / "platform.db")
+
+
 def _secret_from_file() -> str:
     f = PLATFORM_DIR / "secret.key"
     if f.exists() and f.read_text(encoding="utf-8").strip():
@@ -59,7 +64,7 @@ class Settings:
     def from_env(cls, **override) -> "Settings":
         e = os.environ
         admin = (e["SD_ADMIN_USER"], e["SD_ADMIN_PASSWORD"]) if e.get("SD_ADMIN_USER") and e.get("SD_ADMIN_PASSWORD") else None
-        s = cls(db_url=e.get("SD_DB_URL") or sqlite_url(PLATFORM_DIR / "platform.db"), secret_key=e.get("SD_SECRET_KEY") or _secret_from_file(),
+        s = cls(db_url=default_db_url(), secret_key=e.get("SD_SECRET_KEY") or _secret_from_file(),
                 auth_required=e.get("SD_AUTH", "on").strip().lower() not in ("off", "0", "false", "no"), token_ttl_sec=int(float(e.get("SD_TOKEN_TTL_MIN", "720")) * 60),
                 cors_origins=tuple(x.strip() for x in e.get("SD_CORS", "").split(",") if x.strip()), expose_docs=e.get("SD_API_DOCS", "1") != "0", serve_ui=e.get("SD_UI", "1") != "0", bootstrap_admin=admin)
         return replace(s, **override) if override else s

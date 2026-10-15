@@ -155,10 +155,10 @@ def _feedback_section() -> None:
 
     def _do():
         from sd.realtime.feedback import export_reviewed
-        from sd.realtime.store import open_store
+        from sd.server.store import SqlAlertStore
 
         LH.snapshot("events", UC.who(), "перед переносом решений оператора", "import", force=True)
-        return export_reviewed(open_store())
+        return export_reviewed(SqlAlertStore())
 
     UC.confirm("Перенести решения в эталон", "fb_export", "Решения оператора будут добавлены в labels/events_gt.csv. Текущий эталон сохранится версией.", _do,
                disabled=not s.get("pending"))

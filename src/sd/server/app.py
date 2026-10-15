@@ -55,19 +55,19 @@ TAGS = [dict(name="система", description="Проверка живости
         dict(name="разработчик", description="Профили, журнал прогонов, задачи, разметка (developer).")]
 
 
-def _legacy_factory(db: Database) -> Callable[[], object]:
+def _videos_factory(db: Database) -> Callable[[], object]:
     def make():
-        from ..web.api import WebApp
+        from .services.videos import VideoService
 
-        return WebApp(store=SqlAlertStore(db, migrate=False))
+        return VideoService(store=SqlAlertStore(db, migrate=False))
 
     return make
 
 
-def create_app(settings: Settings | None = None, *, db: Database | None = None, legacy_factory: Callable[[], object] | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, db: Database | None = None, videos_factory: Callable[[], object] | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     db = db or Database(settings.db_url)
-    ctx = Ctx(settings=settings, db=db, legacy_factory=legacy_factory or _legacy_factory(db))
+    ctx = Ctx(settings=settings, db=db, videos_factory=videos_factory or _videos_factory(db))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -115,7 +115,7 @@ def create_app(settings: Settings | None = None, *, db: Database | None = None, 
     def _err(code: int):
         return lambda request, exc: JSONResponse({"detail": str(exc.args[0] if isinstance(exc, KeyError) and exc.args else exc)}, status_code=code)
 
-    from ..web.api import NotFound
+    from .services.videos import NotFound
 
     for exc, code in ((NotFound, 404), (FileNotFoundError, 404), (PermissionError, 403), (FileExistsError, 409), (UserError, 422), (AlertError, 422), (CameraError, 422), (ValueError, 400),
                       (KeyError, 400)):

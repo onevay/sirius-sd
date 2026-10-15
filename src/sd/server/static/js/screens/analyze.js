@@ -193,6 +193,22 @@ export default async function analyze(root, ctx) {
   const resultsBox = h("div", { class: "stack" });
   const timelineBox = h("div");
   let video, canvas, playerBox, flags = { box: true, kp: true, gt: true };
+  let exportBtn = null;
+
+  /** Видео с рамками и тревогами из сохранённого разбора: модель заново не запускается. */
+  async function exportVideo() {
+    exportBtn.disabled = true;
+    toast("Готовлю видео с разметкой, это может занять несколько минут…", { ms: 6000 });
+    try {
+      const r = await api.post("/analysis/export", { video: st.video, profile: (st.meta && st.meta.profile) || st.profile || null });
+      const a = h("a", { href: `/api/v1/media/export/${encodeURIComponent(r.name)}`, download: r.name, style: { display: "none" } });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      toast(`Готово: ${r.name} (${r.size_mb} МБ)`, { kind: "ok" });
+    } catch (e) { toast(errText(e), { kind: "alarm" }); }
+    exportBtn.disabled = !st.trace;
+  }
 
   function drawRight() {
     aborts.forEach((a) => a.abort());
@@ -204,8 +220,9 @@ export default async function analyze(root, ctx) {
     const profSel = h("select", { class: "input input--sm", style: { width: "auto", minWidth: "240px" }, "aria-label": "Профиль", onChange: (e) => { st.profile = e.target.value; pref.set("profile", st.profile); st.trace = st.meta = null; drawResults(); drawTimeline(); drawLeft(); loadResult(); } },
       ...(st.profiles.length ? st.profiles : [{ name: "", label: st.profLoading ? "загрузка профилей…" : "профилей нет", ready: false }]).map((p) => h("option", { value: p.name, disabled: !p.ready, selected: p.name === st.profile }, `${p.label}${p.quality && p.quality.f1 != null ? ` · F1 ${num(p.quality.f1)}` : ""}${p.ready ? "" : " — не готов"}`)));
     const desc = (profileOf(st.profile) || {}).describe || {};
+    exportBtn = canRun ? button({ label: "Видео с разметкой", ic: "download", disabled: !st.trace, title: "Скачать видео с рамками людей и тревогами из этого разбора", onClick: exportVideo }) : null;
     const head = card(null, h("div", { class: "card__head" }, h("div", { class: "grow" }, h("h2", { class: "ellipsis" }, v ? v.name : "Видео"), h("span", { class: "small muted" }, [desc.fps ? `${desc.fps} к/с` : null, desc.cycle_model, desc.pose].filter(Boolean).join(" · "))), profSel,
-      canRun ? button({ label: "Запустить разбор", ic: "play", kind: "accent", disabled: !st.profile, onClick: run }) : null), statusLine);
+      canRun ? button({ label: "Запустить разбор", ic: "play", kind: "accent", disabled: !st.profile, onClick: run }) : null, exportBtn), statusLine);
     paintJobStatus();
 
     playerBox = h("div", { class: "player" });
@@ -346,6 +363,7 @@ export default async function analyze(root, ctx) {
   // ───────── результат ─────────
   function drawResults() {
     clear(resultsBox);
+    if (exportBtn) exportBtn.disabled = !st.trace;
     if (!st.trace) {
       resultsBox.append(card({ class: "card--flat" }, h("p", { class: "muted" }, st.job && st.job.state !== "done" ? "Идёт разбор — результат появится здесь." : "Для этого видео и профиля разбора ещё нет."),
         canRun ? button({ label: "Запустить разбор", ic: "play", kind: "accent", size: "sm", disabled: !st.profile, onClick: run }) : null));

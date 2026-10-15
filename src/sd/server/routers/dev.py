@@ -1,6 +1,6 @@
 """Интерфейс разработчика через API (роль developer): профили, журнал прогонов и их пометки, задачи доработки, версии разметки, спецификации классификатора, выпуски.
 
-Это те же операции, что в Dev Studio (`sd ui`): логика остаётся в `sd.web.admin`, `sd.experiments`, `sd.compare`, `sd.tasks`, `sd.labels_history`, `sd.classifier`, `sd.release` —
+Это те же операции, что в Dev Studio (`sd ui`): логика — в `services.devtools`, `sd.experiments`, `sd.compare`, `sd.tasks`, `sd.labels_history`, `sd.classifier`, `sd.release` —
 здесь они получают вход, роль и запись в журнал действий, чтобы веб-версия могла делать то же без Streamlit.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ from ... import labels_history as LH
 from ... import profiles as PR
 from ... import release as RL
 from ... import tasks as TK
-from ...web import admin
+from ..services import devtools as admin
 from .. import deps
 from ..jsonutil import clean
 from ..models import User

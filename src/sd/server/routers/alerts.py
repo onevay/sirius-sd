@@ -156,7 +156,7 @@ def events(request: Request, since_alert: int | None = Query(None, ge=0, descrip
 def demo(body: DemoIn, request: Request, ctx: deps.Ctx = Depends(deps.get_ctx), me: User = Depends(deps.admin), s: Session = Depends(deps.get_session)) -> dict:
     from ...realtime.demo import seed_demo
 
-    store = ctx.legacy.store
+    store = ctx.videos.store
     n = store.delete_demo() if body.clear else seed_demo(store, body.n)
     deps.audit(s, request, me, "demo.clear" if body.clear else "demo.seed", "alert", "", n=n)
     return dict(n=n)
