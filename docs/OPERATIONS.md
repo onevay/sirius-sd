@@ -73,7 +73,7 @@ Lock-файл `requirements.lock.txt` снят на Windows; платформе�
 docker compose build                                   # один раз (≈ 10–15 мин; сеть нужна только здесь и для весов)
 docker compose up ui                                   # Dev Studio: http://127.0.0.1:8501
 docker compose up app                                  # приложение оператора: http://127.0.0.1:8502
-SD_ADMIN_USER=admin SD_ADMIN_PASSWORD='...' docker compose up api   # API платформы: http://127.0.0.1:8503/docs (БД — SD_DB_URL, см. API.md)
+SD_ADMIN_USER=admin SD_ADMIN_PASSWORD='...' docker compose up api   # API и веб-интерфейс платформы: http://127.0.0.1:8503/app/ (документация API — /docs, БД — SD_DB_URL, см. API.md и WEB_UI.md)
 docker compose --profile monitor up -d monitor         # воркер потока
 docker compose run --rm cli doctor                     # проверка окружения
 docker compose run --rm cli models get all             # веса в ./models

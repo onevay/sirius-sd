@@ -25,7 +25,7 @@ def _settings(**kw):
 def serve_cmd(host: Annotated[str, typer.Option(help="адрес привязки; для доступа из сети — 0.0.0.0 (вход обязателен)")] = "127.0.0.1", port: int = 8503,
               no_auth: Annotated[bool, typer.Option("--no-auth", help="без входа (все запросы — администратор local); только для локальной привязки")] = False,
               reload: Annotated[bool, typer.Option(help="перезапуск при правках кода (разработка)")] = False, log_level: str = "info") -> None:
-    """Запускает API платформы (FastAPI + uvicorn). Документация — http://<адрес>:<порт>/docs"""
+    """Запускает API платформы и веб-интерфейс (FastAPI + uvicorn): интерфейс — http://<адрес>:<порт>/app/, документация API — /docs"""
     import uvicorn
 
     local = host in LOCAL
@@ -36,7 +36,8 @@ def serve_cmd(host: Annotated[str, typer.Option(help="адрес привязк�
     if not st.auth_required and not local:          # и флаг --no-auth, и SD_AUTH=off
         console.print("[red]вход отключён (SD_AUTH=off): при привязке не к 127.0.0.1 запуск запрещён[/]")
         raise typer.Exit(2)
-    console.print(f"API: http://{host}:{port}/docs · БД: {st.db_url.split('@')[-1]} · вход: {'нужен' if st.auth_required else 'отключён'}")
+    ui = f"интерфейс: http://{host}:{port}/app/ · " if st.serve_ui else ""
+    console.print(f"{ui}API: http://{host}:{port}/docs · БД: {st.db_url.split('@')[-1]} · вход: {'нужен' if st.auth_required else 'отключён'}")
     if reload:
         import os
 
