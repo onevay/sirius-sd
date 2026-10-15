@@ -32,18 +32,18 @@ class Ctx:
 
     settings: Settings
     db: Database
-    legacy_factory: Callable[[], object]          # создаёт прежний WebApp (анализ видео, профили, задачи) — лениво: он тянет тяжёлые модули
-    _legacy: object | None = None
+    videos_factory: Callable[[], object]          # создаёт `services.videos.VideoService` (источники, воспроизведение, разбор видео) — лениво: он тянет тяжёлые модули
+    _videos: object | None = None
     login_failures: dict = field(default_factory=dict)
 
     @property
-    def legacy(self):
-        if self._legacy is None:
-            legacy = self.legacy_factory()
-            if hasattr(legacy, "allow_fs"):
-                legacy.allow_fs = self.settings.allow_fs      # загрузка файлов и подключение папок — только по настройке, что бы ни вернула фабрика
-            self._legacy = legacy
-        return self._legacy
+    def videos(self):
+        if self._videos is None:
+            videos = self.videos_factory()
+            if hasattr(videos, "allow_fs"):
+                videos.allow_fs = self.settings.allow_fs      # загрузка файлов и подключение папок — только по настройке, что бы ни вернула фабрика
+            self._videos = videos
+        return self._videos
 
 
 def get_ctx(request: Request) -> Ctx:

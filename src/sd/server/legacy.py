@@ -1,4 +1,4 @@
-"""Перенос данных из прежней SQLite-базы мониторинга (`outputs/monitor/monitor.db`, `realtime.store.AlertStore`) в БД платформы.
+"""Разовый перенос данных из прежней SQLite-базы мониторинга (`outputs/monitor/monitor.db`) в БД платформы: до объединения хранилищ воркер писал в неё, теперь — в БД платформы.
 
 Идентификаторы тревог сохраняются (на них ссылаются каталоги миниатюр и клипов `outputs/monitor/alerts/<id>`); по ключу тревоги повторный перенос ничего не дублирует.
 Решённые тревоги получают первую строку в истории решений (кто и когда решил — по данным прежней базы).
@@ -11,9 +11,12 @@ from pathlib import Path
 
 from sqlalchemy import select, text
 
+from ..paths import OUTPUTS
 from . import clock
 from .db import Database
 from .models import ALERT_STATUSES, CAMERA_STATUSES, Alert, AlertReview, Camera, Chunk
+
+LEGACY_DB = OUTPUTS / "monitor" / "monitor.db"
 
 
 def _rows(con: sqlite3.Connection, table: str) -> list[dict]:

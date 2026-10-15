@@ -8,13 +8,16 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Callable
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import API_PREFIX, __version__
 from .db import Database
@@ -28,6 +31,15 @@ from .settings import Settings
 from .store import SqlAlertStore, ensure_schema
 
 log = logging.getLogger("sd.server")
+
+STATIC_DIR = Path(__file__).parent / "static"
+UI_PREFIX = "/app"
+#: политика для интерфейса: только свои файлы, без внешних запросов; встроенные стили нужны для атрибутов style, которые ставит DOM-построитель
+UI_CSP = ("default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; "
+          "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+# Windows берёт типы из реестра, где .js может оказаться text/plain — браузер тогда отказывается выполнять модули
+for _ext, _type in ((".js", "text/javascript"), (".mjs", "text/javascript"), (".css", "text/css"), (".woff2", "font/woff2"), (".svg", "image/svg+xml"), (".json", "application/json")):
+    mimetypes.add_type(_type, _ext)
 
 DESCRIPTION = """
 API платформы детекции курения: тревоги и решения операторов, камеры, разбор видео, профили и задачи разработчика.
@@ -43,19 +55,19 @@ TAGS = [dict(name="система", description="Проверка живости
         dict(name="разработчик", description="Профили, журнал прогонов, задачи, разметка (developer).")]
 
 
-def _legacy_factory(db: Database) -> Callable[[], object]:
+def _videos_factory(db: Database) -> Callable[[], object]:
     def make():
-        from ..web.api import WebApp
+        from .services.videos import VideoService
 
-        return WebApp(store=SqlAlertStore(db, migrate=False))
+        return VideoService(store=SqlAlertStore(db, migrate=False))
 
     return make
 
 
-def create_app(settings: Settings | None = None, *, db: Database | None = None, legacy_factory: Callable[[], object] | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, db: Database | None = None, videos_factory: Callable[[], object] | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     db = db or Database(settings.db_url)
-    ctx = Ctx(settings=settings, db=db, legacy_factory=legacy_factory or _legacy_factory(db))
+    ctx = Ctx(settings=settings, db=db, videos_factory=videos_factory or _videos_factory(db))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -91,15 +103,19 @@ def create_app(settings: Settings | None = None, *, db: Database | None = None, 
         resp.headers.setdefault("X-Request-ID", rid)
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("Referrer-Policy", "no-referrer")
-        if request.url.path.startswith(API_PREFIX) and "cache-control" not in resp.headers:
+        path = request.url.path
+        if path.startswith(API_PREFIX) and "cache-control" not in resp.headers:
             resp.headers["Cache-Control"] = "no-store"
+        elif path == UI_PREFIX or path.startswith(UI_PREFIX + "/"):
+            resp.headers.setdefault("Content-Security-Policy", UI_CSP)
+            resp.headers["Cache-Control"] = "public, max-age=604800" if path.endswith(".woff2") else "no-cache"        # файлы интерфейса проверяются по ETag при каждом открытии
         return resp
 
     # ---- ошибки прежних модулей и сервисов → JSON с понятным кодом
     def _err(code: int):
         return lambda request, exc: JSONResponse({"detail": str(exc.args[0] if isinstance(exc, KeyError) and exc.args else exc)}, status_code=code)
 
-    from ..web.api import NotFound
+    from .services.videos import NotFound
 
     for exc, code in ((NotFound, 404), (FileNotFoundError, 404), (PermissionError, 403), (FileExistsError, 409), (UserError, 422), (AlertError, 422), (CameraError, 422), (ValueError, 400),
                       (KeyError, 400)):
@@ -113,9 +129,13 @@ def create_app(settings: Settings | None = None, *, db: Database | None = None, 
     for r in (system.router, auth.router, users.router, cameras.router, alerts.router, analysis.router, dev.router):
         app.include_router(r, prefix=API_PREFIX)
 
+    ui = settings.serve_ui and (STATIC_DIR / "index.html").exists()
+    if ui:
+        app.mount(UI_PREFIX, StaticFiles(directory=STATIC_DIR, html=True), name="ui")
+
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
-        return RedirectResponse("/docs" if docs else f"{API_PREFIX}/health")
+        return RedirectResponse(f"{UI_PREFIX}/" if ui else "/docs" if docs else f"{API_PREFIX}/health")
 
     return app
 

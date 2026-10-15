@@ -17,6 +17,7 @@ from ..models import ALERT_STATUSES, Alert, User
 from ..schemas import AlertOut, AlertStatus, BulkReviewIn, BulkReviewOut, DemoIn, Page, ReviewIn, ReviewOut, StatsOut
 from ..services import alerts as AS
 from ..services import artifacts as AF
+from ..services import reports as RS
 
 router = APIRouter(tags=["тревоги"])
 
@@ -87,6 +88,12 @@ def stats(day: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"), _: User
     return AS.stats(s, day)
 
 
+@router.get("/reports/summary", summary="Сводка за период: ряд по дням/часам, причины «ложных», камеры, суточный профиль")
+def reports_summary(days: int = Query(7, ge=1, le=RS.MAX_DAYS), bucket: str = Query("day", pattern="^(day|hour)$"), camera: str | None = None, district: str | None = None,
+                    include_demo: bool = True, _: User = Depends(deps.viewer), s: Session = Depends(deps.get_session)) -> dict:
+    return RS.summary(s, days=days, bucket=bucket, camera=camera, district=district, include_demo=include_demo)
+
+
 @router.get("/review-reasons", summary="Справочник причин для решения «ложная»")
 def reasons(_: User = Depends(deps.viewer)) -> dict[str, str]:
     return AS.REASONS
@@ -149,7 +156,7 @@ def events(request: Request, since_alert: int | None = Query(None, ge=0, descrip
 def demo(body: DemoIn, request: Request, ctx: deps.Ctx = Depends(deps.get_ctx), me: User = Depends(deps.admin), s: Session = Depends(deps.get_session)) -> dict:
     from ...realtime.demo import seed_demo
 
-    store = ctx.legacy.store
+    store = ctx.videos.store
     n = store.delete_demo() if body.clear else seed_demo(store, body.n)
     deps.audit(s, request, me, "demo.clear" if body.clear else "demo.seed", "alert", "", n=n)
     return dict(n=n)

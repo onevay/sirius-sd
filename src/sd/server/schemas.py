@@ -237,6 +237,11 @@ class AnalyzeIn(BaseModel):
     live: bool = False
 
 
+class ExportIn(BaseModel):
+    video: str = Field(description="непрозрачный идентификатор файла из `/sources/videos`")
+    profile: str | None = Field(default=None, description="профиль разбора; пусто — самый свежий разбор файла")
+
+
 class RootIn(BaseModel):
     path: str = Field(max_length=1024)
 

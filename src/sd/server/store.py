@@ -1,10 +1,8 @@
-"""`SqlAlertStore` — хранилище мониторинга на SQLAlchemy с тем же интерфейсом, что у `realtime.store.AlertStore` (SQLite без ORM).
+"""`SqlAlertStore` — хранилище тревог платформы на SQLAlchemy: камеры и обработанные фрагменты, тревоги и неизменяемая история решений оператора.
 
-Воркер (`sd monitor`), демо-данные, обратная связь и прежний `WebApp` принимают любой объект с этим интерфейсом, поэтому переход на новую БД — замена одной строки:
-`store = open_store()` (см. `realtime.store.open_store`: при заданном `SD_DB_URL` вернёт этот класс, иначе прежний). Схему создают и обновляют миграции — конструктор сам доводит БД
-до актуальной версии (`ensure_schema`).
-
-Отличия от прежнего хранилища: типизированные времена (наружу отдаются теми же строками `YYYY-MM-DDTHH:MM:SS`), история решений (`alert_reviews`), камеры с городом и координатами.
+Единственное хранилище проекта: в него пишет воркер (`sd monitor`), демо-данные и обратная связь, его читают API и интерфейс (`sd app`, `sd serve`) и Dev Studio. БД — по `SD_DB_URL`,
+по умолчанию SQLite-файл `outputs/platform/platform.db`; схему создают и обновляют миграции (конструктор сам доводит БД до актуальной версии, `ensure_schema`).
+Времена наружу отдаются строками `YYYY-MM-DDTHH:MM:SS`, `demo` — 0/1, `box` — список.
 """
 from __future__ import annotations
 
@@ -21,7 +19,7 @@ from . import migrate as M
 from .db import Database
 from .models import ALERT_STATUSES, Alert, Camera, Chunk
 from .services import alerts as AS
-from .settings import Settings, sqlite_url
+from .settings import default_db_url, sqlite_url
 
 STATUSES = ALERT_STATUSES
 ALERT_COLUMNS = ("id", "key", "camera_id", "district", "cam_index", "chunk", "chunk_offset", "start_sec", "end_sec", "peak_sec", "t_abs", "t_raised", "confidence", "tid", "box", "rule",
@@ -50,7 +48,7 @@ class SqlAlertStore:
         if isinstance(target, Database):
             self.db = target
         else:
-            url = str(target) if isinstance(target, str) and "://" in str(target) else sqlite_url(target) if target else Settings.from_env().db_url
+            url = str(target) if isinstance(target, str) and "://" in str(target) else sqlite_url(target) if target else default_db_url()
             self.db = Database(url)
         self.path = Path(self.db.engine.url.database) if self.db.engine.url.get_backend_name() == "sqlite" and self.db.engine.url.database else None
         if migrate:

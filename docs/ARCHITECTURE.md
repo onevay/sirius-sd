@@ -1,10 +1,10 @@
 # Архитектура (как устроено сейчас)
 
-> Состояние на 12 октября 2026.
+> Состояние на 15 октября 2026.
 >
 > - Где проект по качеству и плану: [REPORT.md](REPORT.md).
 > - Целевая архитектура коммерческой платформы (FastAPI, роли, города, десктоп): [PLATFORM_GUIDE.md](PLATFORM_GUIDE.md).
-> - Интерфейсы: [DEV_STUDIO.md](DEV_STUDIO.md) (разработчик) и [WEB_APP.md](WEB_APP.md) (оператор).
+> - Интерфейсы: [DEV_STUDIO.md](DEV_STUDIO.md) (разработчик, Streamlit) и [WEB_UI.md](WEB_UI.md) (веб-приложение оператора и разработчика на платформе, [API.md](API.md)).
 
 ## 1. Общая схема
 
@@ -21,15 +21,15 @@
  └──────────────────────────────────────────────────────────────────────────────────────────────────┘
         │ realtime.StreamEngine (буфер 90 с)                   │ evaluation (Event F1, ±3 с, IoU ≥ 0.3)
         ▼                                                      ▼
- AlertStore (SQLite WAL) ◄── worker (sd monitor)        experiments (журнал прогонов, отпечатки, заметки)
+ SqlAlertStore (БД платформы) ◄── worker (sd monitor)  experiments (журнал прогонов, отпечатки, заметки)
         │                                                      │
         ▼                                                      ▼
- web (sd app, :8502): карта, тревоги, анализ видео      Dev Studio (sd ui, Streamlit): валидация, аналитика,
+ web (sd app / sd serve): обзор, тревоги, анализ видео  Dev Studio (sd ui, Streamlit): валидация, аналитика,
         │ решения оператора                             конструктор, задачи, данные, модели, профилирование, выпуск
         └──► realtime.feedback ──► labels/events_gt.csv ──► обучение ──► пакет ──► решатель / выпуск
 ```
 
-Хранилище тревог в схеме — прежний SQLite-файл или (при `SD_DB_URL`) БД платформы; поверх неё работает API платформы (`sd serve`, :8503) для веба и интеграций — раздел 5.3.
+Хранилище тревог в схеме — БД платформы (по умолчанию SQLite-файл `outputs/platform/platform.db`, при `SD_DB_URL` — любая); поверх неё работают веб-приложение и API платформы (`sd app`, `sd serve`) — раздел 5.2.
 
 Схема конвейера с моделями профиля `mvp` — [img/platform/d02_pipeline.svg](img/platform/d02_pipeline.svg). Живая схема с подсветкой правок — вкладка «Конструктор» Dev Studio (`arch.dot`).
 
@@ -177,13 +177,14 @@
 
 ### 3.4. Хранилище тревог
 
-По умолчанию — файл `outputs/monitor/monitor.db` (SQLite WAL, `SD_MONITOR_DB`). Пишет воркер, читает веб; это разные процессы. При заданном `SD_DB_URL` вместо него используется БД платформы (`SqlAlertStore`, 5.3): те же операции, плюс история решений и пользователи; схема и перенос — [API.md](API.md), раздел 6–7. Таблицы ниже — прежнего хранилища.
+Единственное хранилище — `SqlAlertStore` (`server/store.py`): БД платформы, по умолчанию файл `outputs/platform/platform.db` (SQLite WAL), при `SD_DB_URL` — любая поддерживаемая (PostgreSQL). Пишет воркер, читают веб-приложение и Dev Studio; это разные процессы, поэтому SQLite работает в режиме WAL с ожиданием блокировки. Схема развивается миграциями, кроме камер и тревог в ней пользователи, API-токены, журнал действий и неизменяемая история решений — [API.md](API.md), разделы 6–7. Старая база `outputs/monitor/monitor.db` больше не используется; её данные переносит `sd db import-legacy`.
 
 | таблица | содержимое |
 |---|---|
-| `cameras` | район, индекс, папка, время начала, статус, последняя активность, обработано секунд |
+| `cameras` | район, индекс, город, название, улица, координаты, папка, время начала, статус, включена ли, последняя активность, обработано секунд |
 | `chunks` | обработанные фрагменты со смещением (перезапуск продолжает с первого необработанного) |
 | `alerts` | ключ `<камера>:<ID>:<начало>`; время события и тревоги; уверенность; рамка; правило и объяснение; `status` (`new` → `confirmed` / `false` / `unsure`); оператор; время решения; заметка; миниатюра; клип; отпечаток профиля; признак `demo` |
+| `alert_reviews` | история решений: статус, причина «ложной», заметка, кто и когда; строки не изменяются |
 
 Обратная связь — `sd feedback-export` (`realtime/feedback.py`). Решения оператора переносятся в `labels/events_gt.csv`:
 - подтверждённые — как POSITIVE с рамкой;
@@ -294,42 +295,23 @@ sd solver check mvp_v1 --mode live
 | `gestures`, `labels_from_gt` | метки жестов, эталон из жестов |
 | `release` | ворота качества, выпуск |
 
-### 5.2. Веб-приложение оператора (`sd app`, порт 8502)
+### 5.2. Веб-приложение (`sd app`, порт 8502; `sd serve`, порт 8503)
 
-Сервер `http.server` из стандартной библиотеки (`web/server.py`, только `127.0.0.1` по умолчанию). Логика без HTTP:
-- `web/api.py` — камеры, видео, тревоги, анализ;
-- `web/admin.py` — профили, реестр, передача;
-- `web/tuning.py` — оценка и подгонка.
-
-Фронтенд — vanilla JS без сборки (`web/static/`).
-
-Видео:
-- клиент выбирает формат через `canPlayType` (h264 или vp9);
-- остальное перекодируется один раз в `outputs/web_cache/`;
-- отдача с поддержкой Range.
-
-Безопасность сейчас:
-- идентификаторы файлов непрозрачные; путь вне разрешённых корней (`streams`, `data`, `SD_WEB_ROOTS`) даёт 404;
-- имя профиля из браузера проходит через `profiles.load_named`;
-- строки экранируются в DOM;
-- **входа, ролей и CSRF-защиты нет**;
-- Leaflet и тайлы карты грузятся с внешних CDN.
-
-Экраны и API — [WEB_APP.md](WEB_APP.md). Это прототип: для коммерческой версии есть бэкенд с входом и ролями (5.3), на который интерфейс предстоит перевести.
-
-### 5.3. Бэкенд платформы (`sd serve`, порт 8503)
-
-Пакет `src/sd/server` — FastAPI + SQLAlchemy 2 + Alembic. Полное описание — [API.md](API.md); здесь — место в архитектуре.
+Пакет `src/sd/server` — FastAPI + SQLAlchemy 2 + Alembic и веб-интерфейс `/app` (vanilla JS без сборки, `server/static`). Описание API — [API.md](API.md), интерфейса — [WEB_UI.md](WEB_UI.md); здесь — место в архитектуре.
 
 ```
-routers/ (system, auth, users, cameras, alerts, analysis, dev)  →  services/ (users, alerts, cameras, audit, artifacts)  →  models.py + migrations/  →  SQLite | PostgreSQL
-                                   └─ делегирует прежним модулям: web.api.WebApp, web.admin, tasks, experiments, compare, labels_history, release
+static/ (веб-интерфейс /app)  ◄──  routers/ (system, auth, users, cameras, alerts, analysis, dev)  →  services/  →  models.py + migrations/  →  SQLite | PostgreSQL
+                                                                                       ├─ users, alerts, cameras, audit, artifacts, reports   (логика над БД)
+                                                                                       ├─ videos   — источники, воспроизведение, очередь разбора, профили для разбора
+                                                                                       └─ devtools — каталог моделей, реестр, профили; далее tasks, experiments, compare, labels_history, release
 ```
 
-- **Что даёт сверх прежнего приложения:** вход и роли (viewer < operator < developer < admin), API-токены, журнал действий, неизменяемую историю решений, камеры с городом и координатами, страницы и фильтры, поток обновлений SSE, доступ к функциям Dev Studio (профили, журнал прогонов, задачи, разметка, выпуски) без Streamlit.
-- **Хранилище мониторинга.** `SqlAlertStore` повторяет интерфейс `realtime.store.AlertStore`; `realtime.store.open_store()` выбирает его при заданном `SD_DB_URL`. Воркер, демо, обратная связь и прежнее приложение работают с БД платформы без правок.
+- **Два запуска одного сервера.** `sd app` — для работы на своём компьютере: порт 8502, вход отключён (администратор `local`), загрузка файлов и подключение папок разрешены. `sd serve` — сервер: порт 8503, вход обязателен, доступ из сети. Не на локальном адресе `sd app` включает вход сам.
+- **Вход и роли** (viewer < operator < developer < admin), API-токены, журнал действий, неизменяемая история решений, камеры с городом и координатами, страницы и фильтры, поток обновлений SSE, доступ к функциям Dev Studio (профили, журнал прогонов, задачи, разметка, выпуски) без Streamlit.
+- **Видео.** Клиент выбирает формат через `canPlayType` (h264 или vp9); остальное перекодируется один раз в `outputs/web_cache/` в фоне с процентом готовности; отдача с поддержкой `Range`. Анализ видео моделью — очередь `VideoService` в памяти процесса: результаты (трасса людей, тревоги, циклы) сохраняются в `outputs/web/analysis`, из них же собирается видео с разметкой (`outputs/web/exports`).
+- **Безопасность.** Права проверяет сервер; идентификаторы файлов непрозрачные, путь вне разрешённых корней (`streams`, `data`, `SD_WEB_ROOTS`, подключённые папки) даёт 404; имена профилей и прогонов проверяются; задачи — белый список; интерфейс не использует `innerHTML`, отдаётся с политикой CSP и без внешних адресов (карта — схема без подложки). Подробно — [API.md](API.md), раздел 10, и [WEB_UI.md](WEB_UI.md), раздел 7.
 - **Схема только через миграции** (`sd db …`, цепочка `0001_identity` → `0002_monitoring`); тест следит, чтобы миграции не расходились с моделями; для PostgreSQL миграции проверены как SQL.
-- **Что не заменено:** распознавание, обучение и Dev Studio остаются в прежних модулях; интерфейс оператора (`sd app`) пока на прежних маршрутах.
+- **Что остаётся за пределами сервера:** распознавание, обучение и Dev Studio живут в модулях верхнего уровня; сервер лишь даёт к ним доступ с проверкой прав.
 
 ## 6. Карта модулей
 
@@ -341,10 +323,10 @@ routers/ (system, auth, users, cameras, alerts, analysis, dev)  →  services/ (
 | классификатор | `bundle`, `classifier`, `cycle_models`, `fusion`, `oof_eval`, `calibrate`, `train` (устаревший) |
 | оценка и анализ | `evaluation`, `evaluate`, `runner`, `run`, `experiments`, `sweep`, `compare`, `cache_analysis`, `reports`, `feature_auc`, `event_check`, `start_eval`, `ladder`, `bench`, `analysis`, `eda`, `detector_eval`, `preds_check` |
 | профили и поставка | `config`, `profiles`, `arch`, `solver`, `release`, `models`, `model_tools`, `catalog`, `external`, `video_fetch`, `photo_fetch`, `safety`, `doctor`, `hw`, `resources` |
-| поток | `realtime/{sources, engine, scoring, worker, replay, store, feedback, demo}` |
-| интерфейсы | `cli`, `cli_dev`, `cli_photos`, `cli_solver` (Typer); `ui/*` (Streamlit); `web/*` (HTTP + SPA); `tasks`, `task_wrapper`, `proxy`, `viewdata` |
-| бэкенд платформы | `server/{app, settings, db, models, migrate, security, deps, schemas, store, legacy, cli}`, `server/services/*`, `server/routers/*`, `server/migrations/versions/*` |
+| поток | `realtime/{sources, engine, scoring, worker, replay, feedback, demo}` |
+| интерфейсы | `cli`, `cli_dev`, `cli_photos`, `cli_solver` (Typer); `ui/*` (Streamlit); `tasks`, `task_wrapper`, `proxy`, `viewdata` |
+| платформа (API и веб-приложение) | `server/{app, settings, db, models, migrate, security, deps, schemas, store, media, legacy, cli}`, `server/services/{users, alerts, cameras, audit, artifacts, reports, videos, devtools}`, `server/routers/*`, `server/migrations/versions/*`, `server/static/*` (интерфейс) |
 
-Каталоги данных задаются переменными `SD_DATA`, `SD_EXTERNAL`, `SD_MODELS`, `SD_OUTPUTS`, `SD_LABELS`, `SD_STREAMS`, `SD_CLASSIFIERS`, `SD_MONITOR_DB` (файл `.env`). Подробно — [OPERATIONS.md](OPERATIONS.md).
+Каталоги данных задаются переменными `SD_DATA`, `SD_EXTERNAL`, `SD_MODELS`, `SD_OUTPUTS`, `SD_LABELS`, `SD_STREAMS`, `SD_CLASSIFIERS` и `SD_DB_URL` (файл `.env`). Подробно — [OPERATIONS.md](OPERATIONS.md).
 
 Разметка-ревью (метки жестов, интервалы, аудит окон) лежит в `labels/review/` и хранится в git. Рабочие метки `labels/*.csv` и история `labels/history/` в git не хранятся. Графики аналитических команд пишутся в `outputs/analysis/img/`.

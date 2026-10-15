@@ -27,7 +27,7 @@ sd = "sd.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-sd = ["ui/frontend/**/*", "web/static/*", "server/migrations/*.py", "server/migrations/*.mako", "server/migrations/versions/*.py"]
+sd = ["ui/frontend/**/*", "server/migrations/*.py", "server/migrations/*.mako", "server/migrations/versions/*.py", "server/static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

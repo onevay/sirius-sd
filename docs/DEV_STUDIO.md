@@ -105,7 +105,7 @@ Dev Studio — рабочее место инженера, который улу
 | Чтение произвольного YAML через веб (S3) | `GET /api/profile/<имя>` и экспорт профиля → `PR.load(имя)`; имя с `.yaml` трактовалось как путь | `profiles.load_named`: только имя из `configs/experiments`, без точек и путей; применено во всех местах веба, где имя приходит из браузера; отсутствующий профиль → 404, а не 500 |
 | Жёсткие пути (A6) | `ROOT/"models"/"cycle"` и `ROOT/"models"/"photo"` в CLI, `ROOT/"configs"/"classifiers"` в классификаторе — в обход `SD_MODELS` | `paths.CYCLE_MODELS`, `PHOTO_MODELS`, `CLASSIFIER_SPECS` (`SD_CLASSIFIERS`), `GESTURES_CSV` (`labels/gesture_gt.csv` главнее `labels/review/…`, если создан) |
 | `sd recognize` (A9) | справка обещала «эвристику-заглушку», конвейер падал с `ClassifierRequired` после загрузки видео | справка честная, без `--cycle-bundle` — понятная ошибка сразу |
-| `.claude/launch.json` | `operator-app` указывал на удалённый `user_app.py` | `operator-web` (`sd app --port 8503`) и `dev-studio-8504` |
+| `.claude/launch.json` | `operator-app` указывал на удалённый `user_app.py` | `web-app` (`sd app`, порт 8502) и `dev-studio-8504` |
 | Журнал прогона | скорость в отчётах относилась непонятно к какой машине | `meta.host` (ОС, процессор, потоки, ОЗУ) и `meta.leak` в каждом новом прогоне |
 | Перестройка эталона | `sd gt-from-gestures` молча заменял строки `assistant` | перед перестройкой — версия эталона |
 

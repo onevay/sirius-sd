@@ -1,4 +1,4 @@
-"""Источники видео, воспроизведение и разбор видео моделью (очередь заданий). Логика — прежний `sd.web.api.WebApp`; здесь он получает вход, роли и аудит."""
+"""Источники видео, воспроизведение и разбор видео моделью (очередь заданий). Логика — `services.videos.VideoService`; здесь она получает вход, роли и аудит."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -7,13 +7,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from .. import deps
 from ..jsonutil import clean
 from ..models import User
-from ..schemas import AnalyzeIn, Message, RootIn
+from ..schemas import AnalyzeIn, ExportIn, Message, RootIn
 
 router = APIRouter(tags=["разбор видео"])
 
 
 def app_of(ctx: deps.Ctx):
-    return ctx.legacy
+    return ctx.videos
 
 
 # ---------------------------------------------------------------------------------------------- источники
@@ -85,6 +85,11 @@ def media_alert_clip(alert_id: int, fmt: str | None = Query(None, pattern="^(h26
     return _playable(app_of(ctx).media_for_alert(alert_id, fmt))
 
 
+@router.get("/media/export/{name}", summary="Готовое видео с разметкой (скачивание)", responses={404: {"description": "файла нет"}})
+def media_export(name: str, ctx: deps.Ctx = Depends(deps.get_ctx), _: User = Depends(deps.viewer)):
+    return FileResponse(app_of(ctx).export_path(name), media_type="video/mp4", filename=name)
+
+
 # ---------------------------------------------------------------------------------------------- разбор
 @router.get("/analysis/profiles", summary="Профили, пригодные для разбора (с качеством по журналу оценок)")
 def profiles(ctx: deps.Ctx = Depends(deps.get_ctx), _: User = Depends(deps.viewer)):
@@ -103,6 +108,13 @@ def submit(body: AnalyzeIn, request: Request, ctx: deps.Ctx = Depends(deps.get_c
     job = app.submit(body.video, body.profile, body.live)
     deps.audit(s, request, me, "analysis.submit", "video", body.video, profile=body.profile, live=body.live)
     return clean(job.to_dict())
+
+
+@router.post("/analysis/export", summary="Видео с разметкой из сохранённого разбора: рамки людей, тревоги, эталон (модель заново не запускается)")
+def export(body: ExportIn, request: Request, ctx: deps.Ctx = Depends(deps.get_ctx), me: User = Depends(deps.operator), s=Depends(deps.get_session)):
+    r = app_of(ctx).export_video(body.video, body.profile)
+    deps.audit(s, request, me, "analysis.export", "video", body.video, profile=body.profile, file=r["name"])
+    return clean(r)
 
 
 @router.get("/analysis/jobs", summary="Последние задания разбора")

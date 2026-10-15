@@ -35,7 +35,7 @@ def meta(t="2026-10-09T10:00:05", district="gatchina"):
 
 @pytest.fixture
 def env(tmp_path):
-    from sd.web.api import WebApp
+    from sd.server.services.videos import VideoService
 
     st = Settings(db_url=sqlite_url(tmp_path / "p.db"), secret_key="k" * 40, auth_required=True, allow_fs=False)
     db = Database(st.db_url)
@@ -44,7 +44,7 @@ def env(tmp_path):
     cam.mkdir(parents=True)
     (cam / "c1.mp4").write_bytes(b"x")
     data.mkdir()
-    app = create_app(st, db=db, legacy_factory=lambda: WebApp(SqlAlertStore(db, migrate=False), streams, data, tmp_path / "out"))
+    app = create_app(st, db=db, videos_factory=lambda: VideoService(SqlAlertStore(db, migrate=False), streams, data, tmp_path / "out"))
     with TestClient(app) as c:
         with db.session() as s:
             for name, role in (("admin1", "admin"), ("dev1", "developer"), ("oper1", "operator"), ("view1", "viewer")):
@@ -246,7 +246,7 @@ def test_auth_disabled_mode_acts_as_local_admin(tmp_path):
     from dataclasses import replace
 
     st = replace(Settings(db_url=sqlite_url(tmp_path / "n.db"), secret_key="k" * 40), auth_required=False)
-    with TestClient(create_app(st, db=Database(st.db_url), legacy_factory=lambda: None)) as c:
+    with TestClient(create_app(st, db=Database(st.db_url), videos_factory=lambda: None)) as c:
         me = c.get("/api/v1/auth/me").json()
         assert me["username"] == "local" and me["role"] == "admin" and c.get("/api/v1/users").status_code == 200
         assert c.put("/api/v1/cameras/a-1", json=dict(city="СПб")).status_code == 200
@@ -402,8 +402,8 @@ def test_analysis_sources_and_error_mapping(env):
 
 def test_analysis_submit_and_job_state(env):
     c, ho = env.client, login(env, "oper1")
-    legacy = env.app.state.ctx.legacy
-    legacy.run_job = lambda j: None                                                   # без распознавания: проверяется только очередь
+    videos = env.app.state.ctx.videos
+    videos.run_job = lambda j: None                                                   # без распознавания: проверяется только очередь
     folders = c.get("/api/v1/sources/folders", headers=ho).json()
     vid = c.get("/api/v1/sources/videos", headers=ho, params=dict(folder=folders[0]["id"])).json()[0]["id"]
     r = c.post("/api/v1/analysis/jobs", headers=ho, json=dict(video=vid, profile="mvp"))
@@ -458,7 +458,7 @@ def test_demo_seed_and_clear(env):
 
 
 # ============================================================================================ хранилище для воркера и перенос
-def test_sql_store_parity_with_legacy_lifecycle(tmp_path):
+def test_sql_store_lifecycle(tmp_path):
     import pytest as _p
 
     st = SqlAlertStore(tmp_path / "m.db")
@@ -492,38 +492,57 @@ def test_sql_store_parity_with_legacy_lifecycle(tmp_path):
         assert len(AS.history(s2, aid)) == 1                                           # решение оператора попало и в историю
 
 
-def test_open_store_switches_on_env(tmp_path, monkeypatch):
-    from sd.realtime.store import AlertStore, open_store
+def test_store_uses_database_from_env(tmp_path, monkeypatch):
+    from sd.server.settings import default_db_url
 
     monkeypatch.delenv("SD_DB_URL", raising=False)
-    assert isinstance(open_store(tmp_path / "a.db"), AlertStore)
+    assert default_db_url().endswith("platform.db") and "platform" in default_db_url()          # воркер, API и Dev Studio по умолчанию смотрят в один файл
     monkeypatch.setenv("SD_DB_URL", sqlite_url(tmp_path / "b.db"))
-    assert isinstance(open_store(), SqlAlertStore)
-    assert isinstance(open_store(sqlite_url(tmp_path / "c.db")), SqlAlertStore)
+    assert default_db_url() == sqlite_url(tmp_path / "b.db") and SqlAlertStore().path == tmp_path / "b.db"
+    assert SqlAlertStore(sqlite_url(tmp_path / "c.db")).path == tmp_path / "c.db" and SqlAlertStore(tmp_path / "d.db").path == tmp_path / "d.db"
+
+
+LEGACY_SCHEMA = """
+CREATE TABLE cameras(camera_id TEXT PRIMARY KEY, district TEXT, cam_index TEXT, folder TEXT, start_at TEXT, status TEXT, last_seen TEXT, processed_sec REAL DEFAULT 0);
+CREATE TABLE chunks(camera_id TEXT, name TEXT, duration REAL, offset_sec REAL, done_at TEXT, PRIMARY KEY(camera_id, name));
+CREATE TABLE alerts(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE, camera_id TEXT, district TEXT, cam_index TEXT, chunk TEXT, chunk_offset REAL,
+  start_sec REAL, end_sec REAL, peak_sec REAL, t_abs TEXT, t_raised TEXT, confidence REAL, tid INTEGER, box TEXT, rule TEXT, explain TEXT, n_cycles INTEGER,
+  state TEXT DEFAULT 'open', status TEXT DEFAULT 'new', reviewer TEXT, reviewed_at TEXT, note TEXT, thumb TEXT, clip TEXT, demo INTEGER DEFAULT 0, fingerprint TEXT,
+  created_at TEXT, updated_at TEXT);
+"""
+
+
+def _legacy_db(path):
+    """База прежнего формата (`outputs/monitor/monitor.db` до объединения хранилищ): две тревоги, одна уже решена оператором."""
+    con = sqlite3.connect(path)
+    con.executescript(LEGACY_SCHEMA)
+    con.execute("INSERT INTO cameras(camera_id, district, cam_index, folder, start_at, status, processed_sec) VALUES('gatchina-01','gatchina','01','$ROOT/streams/x','2026-10-09T10:00:00','idle',60)")
+    con.execute("INSERT INTO chunks VALUES('gatchina-01','a.mp4',30,0,'2026-10-09T10:01:00')")
+    con.execute("INSERT INTO chunks VALUES('ghost','b.mp4',30,0,'2026-10-09T10:01:00')")                  # фрагмент камеры без записи о камере — пропускается
+    row = ("gatchina-01", "gatchina", "01", "$ROOT/x.mp4", 0.0, 5.0, 20.0, 12.0, "2026-10-09T10:00:05", "2026-10-09T10:00:21", 0.8, 1, "[1, 2, 3, 4]", "two_cycles", "2 цикла", 2, "closed")
+    sql = ("INSERT INTO alerts(id, key, camera_id, district, cam_index, chunk, chunk_offset, start_sec, end_sec, peak_sec, t_abs, t_raised, confidence, tid, box, rule, explain, n_cycles, state, "
+           "status, reviewer, reviewed_at, note, thumb, created_at, updated_at) VALUES(?, ?, ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?, ?, ?, ?, ?, ?, ?)")
+    con.execute(sql, (1, "k1", *row, "confirmed", "иван", "2026-10-09T10:05:00", "ок", None, "2026-10-09T10:00:21", "2026-10-09T10:05:00"))
+    con.execute(sql, (2, "k2", *row, "new", None, None, None, "$OUTPUTS/x/t.jpg", "2026-10-09T10:00:51", "2026-10-09T10:00:51"))
+    con.commit()
+    con.close()
 
 
 def test_import_legacy_database(tmp_path):
-    from sd.realtime.store import AlertStore
     from sd.server.legacy import import_legacy
     from sd.server.store import ensure_schema
 
-    old = AlertStore(tmp_path / "monitor.db")
-    old.upsert_camera("gatchina-01", "gatchina", "01", "$ROOT/streams/x", "2026-10-09T10:00:00")
-    old.mark_chunk("gatchina-01", "a.mp4", 30.0, 0.0)
-    old.mark_chunk("ghost", "b.mp4", 30.0, 0.0)                                          # фрагмент камеры без записи о камере — пропускается
-    a, _ = old.apply_update(au(key="k1"), meta())
-    b, _ = old.apply_update(au(key="k2", start=50, end=60), meta("2026-10-09T10:00:50"))
-    old.review(a, "confirmed", "иван", "ок")
-    old.set_artifacts(b, thumb="$OUTPUTS/x/t.jpg")
+    _legacy_db(tmp_path / "monitor.db")
     db = Database(sqlite_url(tmp_path / "new.db"))
     ensure_schema(db)
     r = import_legacy(db, tmp_path / "monitor.db")
     assert (r["cameras"], r["chunks"], r["alerts"], r["reviews"]) == (1, 1, 2, 1)
     st = SqlAlertStore(db, migrate=False)
-    assert st.get(a)["status"] == "confirmed" and st.get(a)["reviewer"] == "иван" and st.get(b)["thumb"] == "$OUTPUTS/x/t.jpg" and st.get(b)["box"] == [1, 2, 3, 4]
+    assert st.get(1)["status"] == "confirmed" and st.get(1)["reviewer"] == "иван" and st.get(2)["thumb"] == "$OUTPUTS/x/t.jpg" and st.get(2)["box"] == [1, 2, 3, 4]
     assert import_legacy(db, tmp_path / "monitor.db")["alerts"] == 0                    # повторный перенос ничего не дублирует
     with db.session() as s:
-        assert [x.reviewer_name for x in AS.history(s, a)] == ["иван"]
+        assert [x.reviewer_name for x in AS.history(s, 1)] == ["иван"]
     with pytest.raises(FileNotFoundError):
         import_legacy(db, tmp_path / "none.db")
     con = sqlite3.connect(tmp_path / "monitor.db")
@@ -557,6 +576,43 @@ def test_cli_db_and_user_commands(tmp_path, monkeypatch):
     assert run(app, ["serve", "--host", "0.0.0.0", "--no-auth"]).exit_code == 2         # вход нельзя отключить при доступе из сети
     monkeypatch.setenv("SD_AUTH", "off")
     assert run(app, ["serve", "--host", "0.0.0.0"]).exit_code == 2                      # …в том числе переменной окружения
+
+
+def test_cli_app_and_serve_modes(tmp_path, monkeypatch):
+    """`sd app` — приложение «для себя» (порт 8502, вход отключён, файлы разрешены), на сетевом адресе вход включается сам; `sd serve` — вход всегда."""
+    import uvicorn
+    from typer.testing import CliRunner
+
+    from sd.cli import app
+
+    monkeypatch.setenv("SD_DB_URL", sqlite_url(tmp_path / "a.db"))
+    monkeypatch.setenv("SD_SECRET_KEY", "k" * 40)
+    monkeypatch.delenv("SD_AUTH", raising=False)
+    monkeypatch.delenv("SD_UI", raising=False)
+    seen: dict = {}
+    monkeypatch.setattr(uvicorn, "run", lambda application, **kw: seen.update(app=application, **kw))
+
+    def launch(*args):
+        seen.clear()
+        r = CliRunner().invoke(app, list(args))
+        return r, (seen["app"].state.ctx.settings if "app" in seen else None)
+
+    r, st = launch("app")
+    assert r.exit_code == 0 and seen["port"] == 8502 and seen["host"] == "127.0.0.1" and "/app/" in r.output
+    assert st.auth_required is False and st.allow_fs is True and st.serve_ui is True
+    r, st = launch("app", "--login")
+    assert r.exit_code == 0 and st.auth_required is True and st.allow_fs is True
+    r, st = launch("app", "--host", "0.0.0.0", "--port", "9000")
+    assert r.exit_code == 0 and seen["port"] == 9000 and st.auth_required is True and st.allow_fs is False       # из сети: вход включён, загрузка файлов отключена
+    r, st = launch("serve")
+    assert r.exit_code == 0 and seen["port"] == 8503 and st.auth_required is True
+    r, st = launch("serve", "--no-auth")
+    assert r.exit_code == 0 and st.auth_required is False
+    monkeypatch.setenv("SD_UI", "0")
+    r, st = launch("app")
+    assert r.exit_code == 2 and st is None and "SD_UI" in r.output                                           # приложение без интерфейса бессмысленно: подсказывает `sd serve`
+    r, st = launch("serve")
+    assert r.exit_code == 0 and st.serve_ui is False
 
 
 def test_migrations_render_for_postgresql():

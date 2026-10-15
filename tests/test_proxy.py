@@ -31,3 +31,27 @@ def test_proxy_error_is_readable(tmp_path):
     with pytest.raises(RuntimeError, match="ffmpeg не смог"):
         PX.ensure_proxy(bad, root=tmp_path / "px")
     assert not list((tmp_path / "px").glob("*.part*"))
+
+
+def test_dev_ui_proxy_codec_env_and_non_browser_format(tmp_path, monkeypatch):
+    """Интерфейс разработчика (Streamlit): любой формат → копия, кодек выбирается SD_PROXY_CODEC (vp8 — для браузеров без H.264)."""
+    import cv2
+    import numpy as np
+
+    from sd.ui import media as UM
+
+    src = tmp_path / "x.avi"
+    w = cv2.VideoWriter(str(src), cv2.VideoWriter_fourcc(*"MJPG"), 10, (160, 96))
+    for i in range(15):
+        img = np.full((96, 160, 3), 40, np.uint8)
+        cv2.rectangle(img, (10 + i, 20), (50 + i, 90), (0, 0, 255), -1)
+        w.write(img)
+    w.release()
+    monkeypatch.setenv("SD_PROXY_CODEC", "vp8")
+    out = PX.ensure_proxy(src, root=tmp_path / "px")
+    assert out.suffix == ".webm" and out.stat().st_size > 100
+    monkeypatch.setattr(PX, "PROXY_DIR", tmp_path / "px2")
+    uri, warn = UM.media_src(src)
+    assert uri.startswith("data:video/webm;base64,") and warn is None
+    monkeypatch.delenv("SD_PROXY_CODEC")
+    assert PX.proxy_path(src).suffix == ".mp4"

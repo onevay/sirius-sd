@@ -1,4 +1,4 @@
-"""Команды бэкенда: `sd serve` (API), `sd db …` (миграции и перенос данных), `sd user …` (пользователи и токены)."""
+"""Команды платформы: `sd app` (приложение для одного компьютера), `sd serve` (сервер), `sd db …` (миграции и перенос данных), `sd user …` (пользователи и токены)."""
 from __future__ import annotations
 
 from .. import _env  # noqa: F401
@@ -22,10 +22,16 @@ def _settings(**kw):
     return Settings.from_env(**kw)
 
 
+def _banner(st, host: str, port: int) -> None:
+    shown = "127.0.0.1" if host in ("0.0.0.0", "") else host
+    ui = f"интерфейс: [bold]http://{shown}:{port}/app/[/] · " if st.serve_ui else ""
+    console.print(f"{ui}API: http://{shown}:{port}/docs · БД: {st.db_url.split('@')[-1]} · вход: {'нужен' if st.auth_required else 'отключён (локальный режим)'}  (Ctrl+C — остановить)")
+
+
 def serve_cmd(host: Annotated[str, typer.Option(help="адрес привязки; для доступа из сети — 0.0.0.0 (вход обязателен)")] = "127.0.0.1", port: int = 8503,
               no_auth: Annotated[bool, typer.Option("--no-auth", help="без входа (все запросы — администратор local); только для локальной привязки")] = False,
               reload: Annotated[bool, typer.Option(help="перезапуск при правках кода (разработка)")] = False, log_level: str = "info") -> None:
-    """Запускает API платформы (FastAPI + uvicorn). Документация — http://<адрес>:<порт>/docs"""
+    """Запускает сервер платформы — API и веб-интерфейс (FastAPI + uvicorn): интерфейс — http://<адрес>:<порт>/app/, документация API — /docs. Вход обязателен."""
     import uvicorn
 
     local = host in LOCAL
@@ -36,13 +42,39 @@ def serve_cmd(host: Annotated[str, typer.Option(help="адрес привязк�
     if not st.auth_required and not local:          # и флаг --no-auth, и SD_AUTH=off
         console.print("[red]вход отключён (SD_AUTH=off): при привязке не к 127.0.0.1 запуск запрещён[/]")
         raise typer.Exit(2)
-    console.print(f"API: http://{host}:{port}/docs · БД: {st.db_url.split('@')[-1]} · вход: {'нужен' if st.auth_required else 'отключён'}")
+    _banner(st, host, port)
     if reload:
         import os
 
         os.environ["SD_AUTH"] = "off" if no_auth else os.environ.get("SD_AUTH", "on")
         uvicorn.run("sd.server.app:create_app", factory=True, host=host, port=port, reload=True, log_level=log_level)
         return
+    from .app import create_app
+
+    uvicorn.run(create_app(st), host=host, port=port, log_level=log_level)
+
+
+def app_cmd(host: Annotated[str, typer.Option(help="адрес привязки; в контейнере и для доступа из сети — 0.0.0.0 (тогда вход включается сам)")] = "127.0.0.1", port: int = 8502,
+            login: Annotated[bool, typer.Option("--login/--no-login", help="требовать вход (пользователей создаёт `sd user create`); по умолчанию на этом компьютере вход отключён")] = False,
+            open_browser: Annotated[bool, typer.Option("--open/--no-open", help="открыть браузер")] = False, log_level: str = "warning") -> None:
+    """Веб-приложение для работы на одном компьютере: интерфейс оператора и разработчика (`/app/`), без входа, видео и папки — прямо с этого компьютера.
+    Тот же сервер, что `sd serve`, но с настройками «для себя»: порт 8502, вход отключён. Не на локальном адресе вход включается автоматически."""
+    import threading
+
+    import uvicorn
+
+    local = host in LOCAL
+    st = _settings(auth_required=bool(login or not local), allow_fs=local)
+    if not st.serve_ui:
+        console.print("[red]интерфейс отключён переменной SD_UI=0: запустите `sd serve` (только API) или уберите её[/]")
+        raise typer.Exit(2)
+    _banner(st, host, port)
+    if not local and not login:
+        console.print("[yellow]доступ из сети: вход включён автоматически, пользователя создаёт `sd user create` или SD_ADMIN_USER / SD_ADMIN_PASSWORD[/]")
+    if open_browser:
+        import webbrowser
+
+        threading.Timer(1.5, webbrowser.open, [f"http://{'127.0.0.1' if host in ('0.0.0.0', '') else host}:{port}/app/"]).start()
     from .app import create_app
 
     uvicorn.run(create_app(st), host=host, port=port, log_level=log_level)
@@ -109,11 +141,10 @@ def db_stamp(revision: Annotated[str, typer.Argument()] = "head") -> None:
 
 @db_app.command("import-legacy", help="Перенести камеры, тревоги и решения из прежней SQLite-базы мониторинга (по умолчанию outputs/monitor/monitor.db).")
 def db_import_legacy(path: Annotated[Optional[Path], typer.Argument(help="файл monitor.db")] = None) -> None:
-    from ..realtime.store import DB_PATH
     from .app import ensure_ready
-    from .legacy import import_legacy
+    from .legacy import LEGACY_DB, import_legacy
 
-    src = path or DB_PATH
+    src = path or LEGACY_DB
     db = ensure_ready(_settings())
     try:
         console.print(import_legacy(db, src))

@@ -10,7 +10,7 @@ import numpy as np
 
 from ..paths import portable
 from .engine import AlertUpdate
-from .store import AlertStore
+from ..server.store import SqlAlertStore
 from .worker import ARTIFACTS
 
 DISTRICTS = ["gatchina", "pavlovsk", "tsarskoe-selo"]
@@ -27,7 +27,7 @@ def _frame(i: int, w: int = 480, h: int = 270):
     return img
 
 
-def seed_demo(store: AlertStore, n: int = 14, seed: int = 7, root: Path | None = None, with_clips: bool = True, now: datetime | None = None) -> int:
+def seed_demo(store: SqlAlertStore, n: int = 14, seed: int = 7, root: Path | None = None, with_clips: bool = True, now: datetime | None = None) -> int:
     rnd = random.Random(seed)
     now = now or datetime.now().replace(microsecond=0)
     root = root or ARTIFACTS

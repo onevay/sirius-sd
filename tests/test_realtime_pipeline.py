@@ -13,7 +13,7 @@ from sd.realtime import feedback as FB
 from sd.realtime import sources as S
 from sd.realtime import worker as W
 from sd.realtime.engine import AlertUpdate, StreamEngine
-from sd.realtime.store import AlertStore
+from sd.server.store import SqlAlertStore
 
 G2 = [(5.0, 2.0, 1.5, 1.5), (16.0, 2.0, 1.5, 1.5)]
 
@@ -70,7 +70,7 @@ def alert(key="c:1:5.00", kind="open", start=5.0, end=20.0, conf=0.8, box=(1, 2,
 
 
 def test_store_lifecycle_review_and_stats(tmp_path):
-    st = AlertStore(tmp_path / "m.db")
+    st = SqlAlertStore(tmp_path / "m.db")
     st.upsert_camera("c", "gatchina", "01", "$ROOT/streams/c", "2026-10-09T10:00:00")
     meta = dict(district="gatchina", cam_index="01", chunk="$ROOT/x.mp4", chunk_offset=0.0, t_abs="2026-10-09T10:00:05", fingerprint="fp")
     aid, k = st.apply_update(alert(), meta)
@@ -119,7 +119,7 @@ PROF = PR.Profile("t", config={"cycles.th_in": 0.35, "cycles.th_out": 0.55, "eve
 def test_worker_processes_chunks_writes_alert_artifacts_and_resumes(tmp_path, monkeypatch):
     pytest.importorskip("cv2")
     streams = make_stream(tmp_path).parent
-    store = AlertStore(tmp_path / "m.db")
+    store = SqlAlertStore(tmp_path / "m.db")
     logs = []
     stream = S.scan_streams(streams)[0]
     eng = fake_engine_factory(G2)(PROF, stream.camera_id, 10.0)
@@ -146,7 +146,7 @@ def test_worker_processes_chunks_writes_alert_artifacts_and_resumes(tmp_path, mo
 
 def test_worker_survives_broken_chunk_and_artifact_failure(tmp_path):
     streams = make_stream(tmp_path).parent
-    store = AlertStore(tmp_path / "m.db")
+    store = SqlAlertStore(tmp_path / "m.db")
     stream = S.scan_streams(streams)[0]
     calls = {"n": 0}
 
@@ -165,7 +165,7 @@ def test_worker_survives_broken_chunk_and_artifact_failure(tmp_path):
 def test_run_monitor_stop_event_and_camera_filter(tmp_path):
     streams = make_stream(tmp_path).parent
     make_stream(tmp_path, "pavlovsk-01-20261009T100000", 1)
-    store = AlertStore(tmp_path / "m.db")
+    store = SqlAlertStore(tmp_path / "m.db")
     stop = threading.Event()
     seen = []
 
@@ -181,7 +181,7 @@ def test_run_monitor_stop_event_and_camera_filter(tmp_path):
 
 
 def test_feedback_exports_decisions_to_gt_once(tmp_path):
-    st = AlertStore(tmp_path / "m.db")
+    st = SqlAlertStore(tmp_path / "m.db")
     base = dict(district="d", cam_index="1", chunk="$ROOT/streams/gatchina-03-x/c2.mp4", chunk_offset=30.0, fingerprint="fp")
     a1, _ = st.apply_update(alert("k1", start=40.0, end=55.0, box=(10, 20, 110, 220)), {**base, "t_abs": "2026-10-09T10:00:40"})
     a2, _ = st.apply_update(alert("k2", start=70.0, end=80.0), {**base, "t_abs": "2026-10-09T10:01:10"})
@@ -219,7 +219,7 @@ def test_end_to_end_with_real_video_chunks(tmp_path):
     d.mkdir(parents=True)
     for i in (1, 2):
         subprocess.run([_ffmpeg(), "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=160x120:rate=10:duration=25", "-pix_fmt", "yuv420p", str(d / f"part{i}.mp4")], check=True)
-    store = AlertStore(tmp_path / "m.db")
+    store = SqlAlertStore(tmp_path / "m.db")
     # жесты: первый в конце 1-го фрагмента (18–23 с), второй — во 2-м (28–33 с): событие собирается через границу фрагментов
     gest = [(18.0, 2.0, 1.5, 1.5), (28.0, 2.0, 1.5, 1.5)]
     tot = W.run_monitor(tmp_path / "streams", PROF, store, engine_factory=lambda p, cam, fps: StreamEngine(p.cfg(), cam, make_pose_fn(gest)), process_fps=10.0, speed=0.0,
